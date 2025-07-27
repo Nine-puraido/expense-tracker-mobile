@@ -395,6 +395,10 @@ const categoryCardWidth = (width - 70) / 3; // 3 columns for better text fit
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    ...(Platform.OS === 'web' && {
+      height: '100vh',
+      overflow: 'hidden',
+    }),
   },
   safeArea: {
     flex: 1,
@@ -421,6 +425,9 @@ const styles = StyleSheet.create({
     padding: 20,
     marginBottom: 20,
     alignItems: 'center',
+    ...(Platform.OS === 'web' && {
+      overflow: 'hidden',
+    }),
   },
   amountLabel: {
     fontSize: 14,
@@ -441,6 +448,13 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     minWidth: 120,
     textAlign: 'center',
+    ...(Platform.OS === 'web' && {
+      outlineStyle: 'none',
+      border: 'none',
+      backgroundColor: 'transparent',
+      width: '100%',
+      maxWidth: 200,
+    }),
   },
   categorySection: {
     marginBottom: 20,

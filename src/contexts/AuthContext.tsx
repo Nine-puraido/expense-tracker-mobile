@@ -17,6 +17,8 @@ const AUTH_STORAGE_KEY = 'expense_tracker_user';
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [user, setUserState] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  
+  console.log('AuthProvider loading:', isLoading, 'user:', user?.email);
 
   useEffect(() => {
     loadUserFromSupabase();

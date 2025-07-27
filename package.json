@@ -2,6 +2,7 @@
   "name": "monthlyexpensetracker",
   "version": "1.0.0",
   "main": "index.ts",
+  "browser": "index.web.js",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
@@ -49,7 +50,10 @@
     "react-native-vector-icons": "^10.2.0",
     "validator": "^13.15.15",
     "victory-native": "^41.17.4",
-    "zod": "^4.0.10"
+    "zod": "^4.0.10",
+    "react-dom": "19.0.0",
+    "react-native-web": "^0.20.0",
+    "@expo/metro-runtime": "~5.0.4"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

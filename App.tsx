@@ -123,6 +123,7 @@ const AppContent = () => {
 };
 
 export default function App() {
+  console.log('App.tsx loaded');
   // Cleanup resources on app state change to background/inactive
   useEffect(() => {
     const handleAppStateChange = (nextAppState: string) => {

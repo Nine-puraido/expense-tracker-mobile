@@ -8,6 +8,7 @@ import { useAppTheme } from '../contexts/ThemeContext';
 import { useDate } from '../contexts/DateContext';
 import { User, Category } from '../types';
 import { BottomTabNavigationProp } from '@react-navigation/bottom-tabs';
+import { createShadowStyle } from '../utils/shadowStyles';
 import { DateSlider } from '../components/DateSlider';
 
 type TabParamList = {
@@ -434,11 +435,13 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 4,
+    ...createShadowStyle({
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
+      elevation: 4,
+    }),
   },
   buttonContent: {
     flexDirection: 'row',

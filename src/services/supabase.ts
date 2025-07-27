@@ -51,7 +51,7 @@ export const supabaseAuthService = {
       data: {
         id: data.user.id,
         email: data.user.email!,
-        nickname: profile?.username,
+        nickname: profile?.nickname || undefined,
         created_at: data.user.created_at,
       }, 
       error: null 
@@ -78,7 +78,7 @@ export const supabaseAuthService = {
       data: {
         id: user.id,
         email: user.email!,
-        nickname: profile?.username,
+        nickname: profile?.nickname || undefined,
         created_at: user.created_at,
       },
       error: null
@@ -102,7 +102,7 @@ export const supabaseAuthService = {
         .from('profiles')
         .insert({ 
           id: user.id,
-          username: updates.nickname || user.user_metadata?.nickname || '',
+          nickname: updates.nickname || user.user_metadata?.nickname || '',
           created_at: new Date().toISOString()
         })
         .select()
@@ -114,10 +114,14 @@ export const supabaseAuthService = {
     // Update existing profile
     const { data, error } = await supabase
       .from('profiles')
-      .update({ username: updates.nickname })
+      .update({ nickname: updates.nickname })
       .eq('id', user.id)
       .select()
       .single();
+
+    if (error) {
+      console.error('Profile update error:', error);
+    }
 
     return { data, error };
   },

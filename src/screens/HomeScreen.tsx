@@ -7,6 +7,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useAppTheme } from '../contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
+import { createShadowStyle } from '../utils/shadowStyles';
 import { User, Transaction, Category } from '../types';
 
 const { width } = Dimensions.get('window');
@@ -159,11 +160,13 @@ export const HomeScreen = ({ user }: { user: User }) => {
     },
     periodBtnActive: {
       backgroundColor: theme.dark ? '#3B82F6' : '#2563EB',
-      shadowColor: '#2563EB',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.25,
-      shadowRadius: 8,
-      elevation: 5,
+      ...createShadowStyle({
+        shadowColor: '#2563EB',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.25,
+        shadowRadius: 8,
+        elevation: 5,
+      }),
     },
     periodBtnText: {
       fontSize: 12,

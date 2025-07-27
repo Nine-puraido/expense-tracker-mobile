@@ -102,7 +102,7 @@ export type Database = {
           currency: string
           id: string
           updated_at: string
-          username: string | null
+          nickname: string | null
         }
         Insert: {
           avatar_url?: string | null
@@ -110,7 +110,7 @@ export type Database = {
           currency?: string
           id: string
           updated_at?: string
-          username?: string | null
+          nickname?: string | null
         }
         Update: {
           avatar_url?: string | null
@@ -118,7 +118,7 @@ export type Database = {
           currency?: string
           id?: string
           updated_at?: string
-          username?: string | null
+          nickname?: string | null
         }
         Relationships: [
           {
