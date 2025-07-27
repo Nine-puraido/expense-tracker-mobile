@@ -100,10 +100,14 @@ jest.mock('../services/supabase', () => ({
   },
 }));
 
-// Mock bcrypt
-jest.mock('bcrypt', () => ({
-  hash: jest.fn(() => Promise.resolve('hashedpassword')),
-  compare: jest.fn(() => Promise.resolve(true)),
+// Mock CryptoJS
+jest.mock('crypto-js', () => ({
+  PBKDF2: jest.fn(() => ({ toString: () => 'hashedpassword' })),
+  lib: {
+    WordArray: {
+      random: jest.fn(() => ({ toString: () => 'randomsalt' }))
+    }
+  }
 }));
 
 // Global test timeout

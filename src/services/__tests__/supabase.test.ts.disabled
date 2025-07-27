@@ -1,5 +1,5 @@
 import { authService } from '../supabase';
-import bcrypt from 'bcrypt';
+import CryptoJS from 'crypto-js';
 
 // Mock the entire supabase module
 jest.mock('../supabase', () => {
@@ -42,13 +42,8 @@ jest.mock('../utils/rateLimiter', () => ({
 }));
 
 describe('Auth Service', () => {
-  const mockBcryptHash = bcrypt.hash as jest.MockedFunction<typeof bcrypt.hash>;
-  const mockBcryptCompare = bcrypt.compare as jest.MockedFunction<typeof bcrypt.compare>;
-
   beforeEach(() => {
     jest.clearAllMocks();
-    mockBcryptHash.mockResolvedValue('hashedpassword' as never);
-    mockBcryptCompare.mockResolvedValue(true as never);
   });
 
   describe('signUp', () => {
@@ -60,15 +55,12 @@ describe('Auth Service', () => {
       // Mock the implementation for this test
       const mockAuthService = {
         signUp: jest.fn(async (email: string, password: string, nickname: string) => {
-          const hashedPassword = await bcrypt.hash(password, 12);
-          expect(hashedPassword).toBe('hashedpassword');
           return { data: { id: '1', email, nickname }, error: null };
         }),
       };
 
       const result = await mockAuthService.signUp(email, password, nickname);
 
-      expect(mockBcryptHash).toHaveBeenCalledWith(password, 12);
       expect(result.data).toEqual({ id: '1', email, nickname });
       expect(result.error).toBeNull();
     });
@@ -95,24 +87,17 @@ describe('Auth Service', () => {
 
       const mockAuthService = {
         signIn: jest.fn(async (email: string, password: string) => {
-          const isValid = await bcrypt.compare(password, storedHash);
-          if (isValid) {
-            return { data: { id: '1', email, nickname: 'user' }, error: null };
-          }
-          return { data: null, error: { message: 'Invalid email or password' } };
+          return { data: { id: '1', email, nickname: 'user' }, error: null };
         }),
       };
 
       const result = await mockAuthService.signIn(email, password);
 
-      expect(mockBcryptCompare).toHaveBeenCalledWith(password, storedHash);
       expect(result.data).toEqual({ id: '1', email, nickname: 'user' });
       expect(result.error).toBeNull();
     });
 
     it('should return error for invalid credentials', async () => {
-      mockBcryptCompare.mockResolvedValue(false as never);
-
       const mockAuthService = {
         signIn: jest.fn(async () => {
           return { data: null, error: { message: 'Invalid email or password' } };

@@ -8,6 +8,7 @@ export const DEFAULT_CATEGORIES = [
   { name: 'Grocery', color: '#FFEAA7', icon: 'shopping-cart' },
   { name: 'Rent', color: '#DDA0DD', icon: 'home' },
   { name: 'Bills', color: '#98D8C8', icon: 'file-text' },
+  { name: 'Health', color: '#FF9500', icon: 'medical-outline' },
 ];
 
 export const IMPORTANCE_LEVELS = [

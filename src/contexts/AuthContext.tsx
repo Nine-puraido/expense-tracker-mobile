@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User } from '../types';
+import { supabase, supabaseAuthService } from '../services/supabase';
 
 interface AuthContextType {
   user: User | null;
@@ -17,20 +18,61 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [user, setUserState] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load user from storage on app start
   useEffect(() => {
-    loadUserFromStorage();
+    loadUserFromSupabase();
+    
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session?.user) {
+        const { data: userData } = await supabaseAuthService.getCurrentUser();
+        if (userData) {
+          setUserState({
+            ...userData,
+            nickname: userData.nickname || undefined,
+            updated_at: new Date().toISOString()
+          });
+        }
+        
+        if (userData) {
+          await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(userData));
+        }
+      } else {
+        setUserState(null);
+        await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
+      }
+      
+      setIsLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const loadUserFromStorage = async () => {
+  const loadUserFromSupabase = async () => {
     try {
-      const storedUser = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
-      if (storedUser) {
-        const userData = JSON.parse(storedUser);
-        setUserState(userData);
+      const { data: userData } = await supabaseAuthService.getCurrentUser();
+      if (userData) {
+        const userWithTimestamp = {
+          ...userData,
+          nickname: userData.nickname || undefined,
+          updated_at: new Date().toISOString()
+        };
+        setUserState(userWithTimestamp);
+        await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(userWithTimestamp));
+      } else {
+        const storedUser = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
+        if (storedUser) {
+          const userData = JSON.parse(storedUser);
+          setUserState(userData);
+        }
       }
     } catch (error) {
-      console.error('Error loading user from storage:', error);
+      try {
+        const storedUser = await AsyncStorage.getItem(AUTH_STORAGE_KEY);
+        if (storedUser) {
+          const userData = JSON.parse(storedUser);
+          setUserState(userData);
+        }
+      } catch (storageError) {
+      }
     } finally {
       setIsLoading(false);
     }
@@ -39,28 +81,24 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const setUser = async (userData: User | null) => {
     try {
       if (userData) {
-        // Save user to storage and state
         await AsyncStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(userData));
         setUserState(userData);
       } else {
-        // Clear user from storage and state
         await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
         setUserState(null);
       }
     } catch (error) {
-      console.error('Error saving user to storage:', error);
-      // Still update state even if storage fails
       setUserState(userData);
     }
   };
 
   const logout = async () => {
     try {
+      await supabaseAuthService.signOut();
       await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
       setUserState(null);
     } catch (error) {
-      console.error('Error during logout:', error);
-      // Force logout even if storage fails
+      await AsyncStorage.removeItem(AUTH_STORAGE_KEY);
       setUserState(null);
     }
   };

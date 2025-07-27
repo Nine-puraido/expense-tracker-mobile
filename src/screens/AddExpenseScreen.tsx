@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Modal, FlatList, ScrollView, SafeAreaView, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView, SafeAreaView, ActivityIndicator, KeyboardAvoidingView, Platform, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../services/supabase';
 import { useFocusEffect } from '@react-navigation/native';
@@ -18,25 +18,29 @@ type TabParamList = {
   Profile: undefined;
 };
 
-const IMPORTANCE = ['essential', 'wants', 'extra'];
+const QUICK_CATEGORIES = ['Food', 'Groceries', 'Transportation'];
 
 const getCategoryIcon = (categoryName: string) => {
   const iconMap: { [key: string]: string } = {
     'Food': 'restaurant',
     'Transportation': 'car',
     'Groceries': 'basket',
+    'Grocery': 'basket',
     'Rent': 'home',
     'Bills': 'receipt',
     'Entertainment': 'game-controller',
     'Shopping': 'bag',
-    'Healthcare': 'medical',
+    'Healthcare': 'medical-outline',
+    'Health': 'medical-outline',
     'Education': 'school',
     'Travel': 'airplane',
     'Fuel': 'car-sport',
     'Insurance': 'shield-checkmark',
     'Utilities': 'flash',
-    'Clothing': 'shirt',
-    'Electronics': 'phone-portrait',
+    'Clothing': 'shirt-outline',
+    'Clothes': 'shirt-outline',
+    'Electronics': 'laptop-outline',
+    'Gadget': 'laptop-outline',
     'Books': 'library',
     'Gifts': 'gift',
     'Other': 'ellipsis-horizontal',
@@ -48,307 +52,351 @@ export const AddExpenseScreen = ({ user }: { user: User }) => {
   const navigation = useNavigation<BottomTabNavigationProp<TabParamList>>();
   const { theme } = useAppTheme();
   const { selectedYear } = useDate();
+  const amountInputRef = useRef<TextInput>(null);
   
   const [amount, setAmount] = useState('');
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+  const [selectedCategoryName, setSelectedCategoryName] = useState<string>('');
   const [description, setDescription] = useState('');
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [importance, setImportance] = useState(IMPORTANCE[0]);
+  const [importance, setImportance] = useState('essential');
   const [loading, setLoading] = useState(false);
-  const [loadingCategories, setLoadingCategories] = useState(true);
-  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showAllCategories, setShowAllCategories] = useState(false);
 
   useEffect(() => {
     const fetchExpenseCategories = async () => {
-      setLoadingCategories(true);
       try {
-        const { data: fetchedCategories, error } = await supabase
+        const { data, error } = await supabase
           .from('categories')
-          .select('id, name, color, icon, type')
-          .eq('type', 'expense');
+          .select('*')
+          .eq('type', 'expense')
+          .order('name');
 
         if (error) {
-          console.error('Error fetching expense categories:', error);
-          setCategories([]);
-          setSelectedCategoryId('');
-        } else {
-          // Sort categories with Food first, then alphabetically
-          const categories = fetchedCategories?.sort((a, b) => {
-            if (a.name === 'Food') return -1;
-            if (b.name === 'Food') return 1;
-            return a.name.localeCompare(b.name);
-          }) || [];
-          
-          setCategories(categories as unknown as Category[]);
-          setSelectedCategoryId(categories[0]?.id || '');
+          return;
+        }
+
+        if (data) {
+          setCategories(data);
         }
       } catch (error) {
-        console.error('Error fetching expense categories:', error);
-        setCategories([]);
-        setSelectedCategoryId('');
       }
-      setLoadingCategories(false);
     };
-    
-    if (user?.id) fetchExpenseCategories();
-  }, [user]);
 
-  // Update selected date when year changes
-  useEffect(() => {
-    const currentDate = new Date(selectedDate);
-    const newDate = new Date(selectedYear, currentDate.getMonth(), currentDate.getDate());
-    // Only update if the year is different
-    if (currentDate.getFullYear() !== selectedYear) {
-      setSelectedDate(newDate);
-    }
-  }, [selectedYear, selectedDate]);
+    fetchExpenseCategories();
+  }, [user.id]);
 
-
-  const handleAddExpense = async () => {
-    if (!amount || isNaN(Number(amount))) {
-      Alert.alert('Error', 'Please enter a valid amount');
-      return;
-    }
-    if (!selectedCategoryId) {
-      Alert.alert('Error', 'Please select a category');
-      return;
-    }
-    setLoading(true);
-    const { error } = await supabase.from('transactions').insert({
-      user_id: user.id,
-      category_id: selectedCategoryId,
-      amount: Number(amount),
-      description,
-      transaction_date: selectedDate.toISOString().split('T')[0],
-      type: 'expense',
-      importance,
-    });
-    setLoading(false);
-    if (error) {
-      Alert.alert('Error', error.message);
-    } else {
-      Alert.alert('Success', 'Expense added!');
+  useFocusEffect(
+    React.useCallback(() => {
       setAmount('');
+      setSelectedCategoryId('');
+      setSelectedCategoryName('');
       setDescription('');
       setSelectedDate(new Date());
-      setImportance(IMPORTANCE[0]);
-      if (categories.length > 0) setSelectedCategoryId(categories[0].id);
-      navigation.navigate('Home');
+      setImportance('essential');
+      setShowAllCategories(false);
+      
+      setTimeout(() => {
+        amountInputRef.current?.focus();
+      }, 100);
+    }, [])
+  );
+
+  const handleCategorySelect = (categoryId: string, categoryName: string) => {
+    setSelectedCategoryId(categoryId);
+    setSelectedCategoryName(categoryName);
+    setShowAllCategories(false);
+  };
+
+  const handleQuickAdd = async () => {
+    if (!amount || !selectedCategoryId) {
+      Alert.alert('Error', 'Please enter amount and select a category');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const { error } = await supabase.from('transactions').insert({
+        user_id: user.id,
+        category_id: selectedCategoryId,
+        amount: Number(amount),
+        description: description || `${selectedCategoryName} expense`,
+        transaction_date: selectedDate.getFullYear() + '-' + 
+          String(selectedDate.getMonth() + 1).padStart(2, '0') + '-' + 
+          String(selectedDate.getDate()).padStart(2, '0'),
+        type: 'expense',
+        importance,
+      });
+
+      if (error) throw error;
+
+      Alert.alert('Success', 'Expense added!', [
+        { text: 'Add Another', onPress: () => {
+          setAmount('');
+          setSelectedCategoryId('');
+          setSelectedCategoryName('');
+          setDescription('');
+          setImportance('essential');
+          setShowAllCategories(false);
+          amountInputRef.current?.focus();
+        }},
+        { text: 'Done', onPress: () => {
+          setTimeout(() => {
+            navigation.navigate('Home');
+          }, 100);
+        }}
+      ]);
+    } catch (error: any) {
+      Alert.alert('Error', error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
+  const quickCategories = categories.filter(cat => QUICK_CATEGORIES.includes(cat.name));
+  const otherCategories = categories.filter(cat => !QUICK_CATEGORIES.includes(cat.name));
+
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
-        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Add Expense</Text>
-      </View>
-
-      <ScrollView 
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Amount Section */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Amount</Text>
-          <View style={[styles.inputContainer, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}>
-            <Text style={[styles.currencySymbol, { color: theme.colors.textSecondary }]}>฿</Text>
-            <TextInput
-              style={[styles.amountInput, { color: theme.colors.text }]}
-              placeholder="0.00"
-              placeholderTextColor={theme.colors.textSecondary}
-              keyboardType="numeric"
-              value={amount}
-              onChangeText={setAmount}
-            />
-          </View>
+    <KeyboardAvoidingView 
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
+    >
+      <SafeAreaView style={styles.safeArea}>
+        <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
+          <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Quick Add Expense</Text>
         </View>
 
-        {/* Category Section */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Category</Text>
-          {loadingCategories ? (
-            <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>Loading categories...</Text>
-          ) : categories.length === 0 ? (
-            <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>No categories found</Text>
-          ) : (
-            <>
-              {/* Quick Categories */}
-              <View style={styles.quickCategoriesRow}>
-                {['Food', 'Transportation', 'Groceries'].map(categoryName => {
-                  const category = categories.find(cat => cat.name === categoryName);
-                  if (!category) return null;
-                  
-                  return (
-                    <TouchableOpacity
-                      key={category.id}
-                      style={[
-                        styles.quickCategoryBtn,
-                        { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
-                        selectedCategoryId === category.id && { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary }
-                      ]}
-                      onPress={() => setSelectedCategoryId(category.id)}
-                    >
-                      <Text style={styles.categoryEmoji}>
-                        {categoryName === 'Food' ? '🍽️' : 
-                         categoryName === 'Transportation' ? '🚗' : 
-                         categoryName === 'Groceries' ? '🛒' : '📝'}
-                      </Text>
-                      <Text style={[
-                        styles.categoryText,
-                        { color: selectedCategoryId === category.id ? '#FFFFFF' : theme.colors.text }
-                      ]}>
-                        {category.name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-              
-              {/* More Categories Button */}
-              <TouchableOpacity
-                style={[styles.moreButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
-                onPress={() => setShowCategoryModal(true)}
-              >
-                <Ionicons name="add" size={20} color={theme.colors.primary} />
-                <Text style={[styles.moreButtonText, { color: theme.colors.primary }]}>More Categories</Text>
-              </TouchableOpacity>
-              
-              {/* Selected Category */}
-              {selectedCategoryId && (
-                <View style={[styles.selectedCategory, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
-                  <Text style={[styles.selectedCategoryText, { color: theme.colors.text }]}>
-                    Selected: {categories.find(cat => cat.id === selectedCategoryId)?.name}
+        <ScrollView 
+          style={styles.content}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={[styles.amountSection, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
+            <Text style={[styles.amountLabel, { color: theme.colors.textSecondary }]}>Amount</Text>
+            <View style={styles.amountInputContainer}>
+              <Text style={[styles.currencySymbol, { color: theme.colors.text }]}>฿</Text>
+              <TextInput
+                ref={amountInputRef}
+                style={[styles.amountInput, { color: theme.colors.text }]}
+                placeholder="0.00"
+                placeholderTextColor={theme.colors.textSecondary}
+                keyboardType="numeric"
+                value={amount}
+                onChangeText={setAmount}
+                returnKeyType="done"
+                onSubmitEditing={() => {
+                  if (amount && !isNaN(Number(amount))) {
+                    amountInputRef.current?.blur();
+                  }
+                }}
+              />
+            </View>
+          </View>
+
+          <View style={styles.categorySection}>
+            <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Category</Text>
+            
+            <View style={styles.categoryGrid}>
+              {quickCategories.map((category) => (
+                <TouchableOpacity
+                  key={category.id}
+                  style={[
+                    styles.categoryCard,
+                    { 
+                      backgroundColor: theme.colors.surface,
+                      borderColor: selectedCategoryId === category.id ? theme.colors.primary : theme.colors.border,
+                      borderWidth: selectedCategoryId === category.id ? 2 : 1,
+                    }
+                  ]}
+                  onPress={() => handleCategorySelect(category.id, category.name)}
+                >
+                  <Ionicons 
+                    name={getCategoryIcon(category.name) as any} 
+                    size={24} 
+                    color={selectedCategoryId === category.id ? theme.colors.primary : theme.colors.text} 
+                  />
+                  <Text 
+                    style={[
+                      styles.categoryName, 
+                      { 
+                        color: selectedCategoryId === category.id ? theme.colors.primary : theme.colors.text,
+                        fontWeight: selectedCategoryId === category.id ? '600' : '500'
+                      }
+                    ]}
+                    numberOfLines={1}
+                    adjustsFontSizeToFit={true}
+                    minimumFontScale={0.8}
+                  >
+                    {category.name}
                   </Text>
-                </View>
-              )}
-            </>
-          )}
-        </View>
-
-        {/* Priority Section */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Priority</Text>
-          <View style={styles.priorityRow}>
-            {IMPORTANCE.map(level => (
+                </TouchableOpacity>
+              ))}
+              
               <TouchableOpacity
-                key={level}
                 style={[
-                  styles.priorityBtn,
-                  { backgroundColor: theme.colors.surface, borderColor: theme.colors.border },
-                  importance === level && { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary }
+                  styles.categoryCard,
+                  { 
+                    backgroundColor: theme.colors.surface, 
+                    borderColor: selectedCategoryId && !QUICK_CATEGORIES.includes(selectedCategoryName) ? theme.colors.primary : theme.colors.border,
+                    borderWidth: selectedCategoryId && !QUICK_CATEGORIES.includes(selectedCategoryName) ? 2 : 1,
+                  }
                 ]}
-                onPress={() => setImportance(level)}
+                onPress={() => setShowAllCategories(!showAllCategories)}
               >
-                <Text style={[
-                  styles.priorityText,
-                  { color: importance === level ? '#FFFFFF' : theme.colors.text }
-                ]}>
-                  {level.charAt(0).toUpperCase() + level.slice(1)}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        {/* Date Section */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Date</Text>
-          <DateSlider 
-            selectedDate={selectedDate}
-            onDateChange={setSelectedDate}
-          />
-        </View>
-
-        {/* Description Section */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Description</Text>
-          <TextInput
-            style={[styles.textInput, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface, color: theme.colors.text }]}
-            placeholder="Add a note (optional)"
-            placeholderTextColor={theme.colors.textSecondary}
-            value={description}
-            onChangeText={setDescription}
-            multiline
-            numberOfLines={3}
-          />
-        </View>
-
-      </ScrollView>
-
-      {/* Floating Action Button */}
-      <TouchableOpacity 
-        style={[styles.fab, { backgroundColor: theme.colors.primary }]} 
-        onPress={handleAddExpense} 
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator size="small" color="#FFFFFF" />
-        ) : (
-          <Ionicons name="add" size={28} color="#FFFFFF" />
-        )}
-      </TouchableOpacity>
-
-
-      {/* Category Modal */}
-      <Modal
-        visible={showCategoryModal}
-        animationType="slide"
-        transparent
-        onRequestClose={() => setShowCategoryModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.categoryModal, { backgroundColor: theme.colors.surface }]}>
-            <View style={[styles.modalHeader, { borderBottomColor: theme.colors.border }]}>
-              <View />
-              <Text style={[styles.modalTitle, { color: theme.colors.text }]}>Select Category</Text>
-              <TouchableOpacity onPress={() => setShowCategoryModal(false)}>
-                <Ionicons name="close" size={24} color={theme.colors.text} />
+                {selectedCategoryId && !QUICK_CATEGORIES.includes(selectedCategoryName) ? (
+                  <>
+                    <Ionicons 
+                      name={getCategoryIcon(selectedCategoryName) as any} 
+                      size={24} 
+                      color={theme.colors.primary} 
+                    />
+                    <Text 
+                      style={[
+                        styles.categoryName, 
+                        { 
+                          color: theme.colors.primary,
+                          fontWeight: '600'
+                        }
+                      ]}
+                      numberOfLines={1}
+                      adjustsFontSizeToFit={true}
+                      minimumFontScale={0.8}
+                    >
+                      {selectedCategoryName}
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <Ionicons 
+                      name="add-circle-outline" 
+                      size={24} 
+                      color={theme.colors.textSecondary} 
+                    />
+                    <Text style={[styles.categoryName, { color: theme.colors.textSecondary }]}>
+                      More
+                    </Text>
+                  </>
+                )}
               </TouchableOpacity>
             </View>
-            
-            <FlatList
-              data={categories.filter(cat => !['Food', 'Transportation', 'Groceries'].includes(cat.name))}
-              keyExtractor={item => item.id}
-              renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={[
-                    styles.categoryItem,
-                    { borderBottomColor: theme.colors.border },
-                    selectedCategoryId === item.id && { backgroundColor: theme.colors.primary + '20' }
-                  ]}
-                  onPress={() => {
-                    setSelectedCategoryId(item.id);
-                    setShowCategoryModal(false);
-                  }}
-                >
-                  <View style={[styles.categoryIconContainer, { backgroundColor: item.color + '20' }]}>
+
+            {showAllCategories && (
+              <View style={[styles.additionalCategories, { backgroundColor: theme.colors.surface }]}>
+                {otherCategories.map((category) => (
+                  <TouchableOpacity
+                    key={category.id}
+                    style={[
+                      styles.additionalCategoryItem,
+                      { borderBottomColor: theme.colors.border }
+                    ]}
+                    onPress={() => handleCategorySelect(category.id, category.name)}
+                  >
                     <Ionicons 
-                      name={getCategoryIcon(item.name) as any} 
+                      name={getCategoryIcon(category.name) as any} 
                       size={20} 
-                      color={item.color} 
+                      color={theme.colors.text} 
                     />
-                  </View>
-                  <Text style={[styles.categoryItemText, { color: theme.colors.text }]}>
-                    {item.name}
-                  </Text>
-                  {selectedCategoryId === item.id && (
-                    <Ionicons name="checkmark" size={20} color={theme.colors.primary} />
-                  )}
-                </TouchableOpacity>
-              )}
-            />
+                    <Text style={[styles.additionalCategoryName, { color: theme.colors.text }]}>
+                      {category.name}
+                    </Text>
+                    {selectedCategoryId === category.id && (
+                      <Ionicons name="checkmark" size={20} color={theme.colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
           </View>
-        </View>
-      </Modal>
-    </SafeAreaView>
+
+          <TouchableOpacity
+            style={[
+              styles.quickAddButton,
+              { 
+                backgroundColor: amount && selectedCategoryId ? theme.colors.primary : theme.colors.border,
+                opacity: amount && selectedCategoryId ? 1 : 0.5
+              }
+            ]}
+            onPress={handleQuickAdd}
+            disabled={!amount || !selectedCategoryId || loading}
+          >
+            {loading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <>
+                <Ionicons name="add-circle" size={24} color="#FFFFFF" />
+                <Text style={styles.quickAddButtonText}>Add Expense</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          <View style={styles.formFields}>
+            <View style={styles.twoColumnRow}>
+              <View style={styles.leftColumn}>
+                <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Priority</Text>
+                <View style={styles.priorityContainer}>
+                  {['essential', 'wants', 'extra'].map((level) => (
+                    <TouchableOpacity
+                      key={level}
+                      style={[
+                        styles.priorityChip,
+                        { 
+                          backgroundColor: importance === level ? theme.colors.primary : theme.colors.surface,
+                          borderColor: theme.colors.border
+                        }
+                      ]}
+                      onPress={() => setImportance(level)}
+                    >
+                      <Text style={[
+                        styles.priorityChipText,
+                        { color: importance === level ? '#FFFFFF' : theme.colors.text }
+                      ]}>
+                        {level.charAt(0).toUpperCase() + level.slice(1)}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+              
+              <View style={styles.rightColumn}>
+                <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Note</Text>
+                <TextInput
+                  style={[styles.compactTextInput, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface, color: theme.colors.text }]}
+                  placeholder="Optional note"
+                  placeholderTextColor={theme.colors.textSecondary}
+                  value={description}
+                  onChangeText={setDescription}
+                  multiline
+                  numberOfLines={2}
+                />
+              </View>
+            </View>
+
+            <View style={styles.dateSection}>
+              <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Date</Text>
+              <DateSlider 
+                selectedDate={selectedDate}
+                onDateChange={setSelectedDate}
+              />
+            </View>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 };
 
+const { width } = Dimensions.get('window');
+const categoryCardWidth = (width - 70) / 3; // 3 columns for better text fit
+
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+  },
+  safeArea: {
     flex: 1,
   },
   header: {
@@ -357,180 +405,145 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: 'bold',
     textAlign: 'center',
   },
   content: {
     flex: 1,
+  },
+  scrollContent: {
     padding: 20,
   },
-  section: {
-    marginBottom: 24,
+  amountSection: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    alignItems: 'center',
+  },
+  amountLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    marginBottom: 8,
+  },
+  amountInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  currencySymbol: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    marginRight: 8,
+  },
+  amountInput: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    minWidth: 120,
+    textAlign: 'center',
+  },
+  categorySection: {
+    marginBottom: 20,
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
     marginBottom: 12,
   },
-  inputContainer: {
+  categoryGrid: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    marginHorizontal: -8,
+  },
+  categoryCard: {
+    width: categoryCardWidth,
+    margin: 8,
+    padding: 16,
+    borderRadius: 12,
     alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    justifyContent: 'center',
+    minHeight: 90,
   },
-  currencySymbol: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    marginRight: 8,
-  },
-  amountInput: {
-    flex: 1,
-    fontSize: 20,
-    fontWeight: '600',
-  },
-  quickCategoriesRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  quickCategoryBtn: {
-    flex: 1,
-    marginHorizontal: 4,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    borderWidth: 1,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  categoryEmoji: {
-    fontSize: 20,
-    marginBottom: 4,
-  },
-  categoryText: {
-    fontSize: 12,
-    fontWeight: '500',
+  categoryName: {
+    fontSize: 13,
+    marginTop: 8,
     textAlign: 'center',
+    lineHeight: 16,
+    fontWeight: '500',
   },
-  moreButton: {
+  additionalCategories: {
+    marginTop: 10,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  additionalCategoryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 15,
+    borderBottomWidth: 1,
+  },
+  additionalCategoryName: {
+    flex: 1,
+    marginLeft: 12,
+    fontSize: 16,
+  },
+  quickAddButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderRadius: 8,
-    marginBottom: 12,
+    paddingVertical: 16,
+    borderRadius: 12,
+    marginBottom: 20,
   },
-  moreButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
+  quickAddButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '600',
     marginLeft: 8,
   },
-  selectedCategory: {
+  formFields: {
+    marginTop: 10,
+  },
+  twoColumnRow: {
+    flexDirection: 'row',
+    marginBottom: 20,
+  },
+  leftColumn: {
+    flex: 1,
+    marginRight: 10,
+  },
+  rightColumn: {
+    flex: 1,
+    marginLeft: 10,
+  },
+  priorityContainer: {
+    flexDirection: 'column',
+    gap: 8,
+  },
+  priorityChip: {
     paddingVertical: 8,
     paddingHorizontal: 12,
-    borderWidth: 1,
-    borderRadius: 6,
-  },
-  selectedCategoryText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  textInput: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    fontSize: 16,
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  priorityRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  priorityBtn: {
-    flex: 1,
-    marginHorizontal: 4,
-    paddingVertical: 12,
-    borderWidth: 1,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  priorityText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  fab: {
-    position: 'absolute',
-    bottom: 30,
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  categoryIconContainer: {
-    width: 40,
-    height: 40,
     borderRadius: 20,
     alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
+    borderWidth: 1,
   },
-  loadingText: {
-    textAlign: 'center',
-    paddingVertical: 20,
-    fontSize: 14,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  datePickerContainer: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingBottom: 20,
-  },
-  categoryModal: {
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    maxHeight: '70%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  modalButton: {
-    fontSize: 16,
+  priorityChipText: {
+    fontSize: 12,
     fontWeight: '500',
   },
-  categoryItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderBottomWidth: 1,
+  compactTextInput: {
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    fontSize: 14,
+    height: 70,
+    textAlignVertical: 'top',
   },
-  categoryItemText: {
-    flex: 1,
-    fontSize: 16,
+  dateSection: {
+    marginBottom: 20,
   },
-}); 
+  section: {
+    marginBottom: 20,
+  },
+});

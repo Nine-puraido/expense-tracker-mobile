@@ -12,7 +12,6 @@ export const DateProvider = ({ children }: { children: ReactNode }) => {
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
   
-  // Generate available years (current year and 10 years back)
   const availableYears = Array.from({ length: 11 }, (_, i) => currentYear - i);
 
   return (

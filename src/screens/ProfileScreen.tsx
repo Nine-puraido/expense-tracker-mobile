@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, Alert, ScrollView, SafeAreaView, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { supabase } from '../services/supabase';
+import { supabase, authService, supabaseAuthService } from '../services/supabase';
+import { exportService } from '../services/exportService';
 import { ThemeToggle } from '../components/ThemeToggle';
 import { useAppTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -16,6 +17,13 @@ export const ProfileScreen = ({ user }: { user: User }) => {
   const { theme } = useAppTheme();
   const { selectedYear, setSelectedYear, availableYears } = useDate();
   const [showYearPicker, setShowYearPicker] = useState(false);
+  const [selectedExportMonth, setSelectedExportMonth] = useState(new Date().getMonth() + 1);
+  const [selectedExportYear, setSelectedExportYear] = useState(new Date().getFullYear());
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [showExportYearPicker, setShowExportYearPicker] = useState(false);
+  const [showDownloadOptions, setShowDownloadOptions] = useState(false);
+  const [exporting, setExporting] = useState(false);
+
 
   const handleSave = async () => {
     if (!nickname.trim()) {
@@ -24,21 +32,22 @@ export const ProfileScreen = ({ user }: { user: User }) => {
     }
     
     setLoading(true);
-    const { error } = await supabase
-      .from('users')
-      .update({ nickname: nickname.trim() })
-      .eq('id', user.id);
-      
-    setLoading(false);
     
-    if (error) {
-      Alert.alert('Error', error.message);
-    } else {
-      // Update the user in AuthContext with new nickname
-      const updatedUser = { ...user, nickname: nickname.trim() };
-      setUser(updatedUser);
-      Alert.alert('Success', 'Nickname updated successfully!');
-      setEditing(false);
+    try {
+      const { data, error } = await supabaseAuthService.updateProfile({ nickname: nickname.trim() });
+      
+      if (error) {
+        Alert.alert('Error', error.message || 'Failed to update nickname');
+      } else {
+        const updatedUser = { ...user, nickname: nickname.trim() };
+        setUser(updatedUser);
+        Alert.alert('Success', 'Nickname updated successfully!');
+        setEditing(false);
+      }
+    } catch (exception) {
+      Alert.alert('Error', 'Failed to update nickname. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -59,9 +68,39 @@ export const ProfileScreen = ({ user }: { user: User }) => {
     return 'U';
   };
 
+  const months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  const exportYears = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
+
+  const handleExport = async (format: 'json' | 'pdf') => {
+    setExporting(true);
+    try {
+      const data = await exportService.getMonthlyData(user.id, selectedExportYear, selectedExportMonth);
+      
+      if (data.transactions.length === 0) {
+        Alert.alert('No Data', `No transactions found for ${months[selectedExportMonth - 1]} ${selectedExportYear}`);
+        return;
+      }
+
+      if (format === 'json') {
+        await exportService.exportToJSON(data);
+      } else {
+        await exportService.exportToPDF(data);
+      }
+
+      Alert.alert('Success', `Data exported successfully as ${format.toUpperCase()}`);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to export data. Please try again.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {/* Header */}
       <View style={[styles.header, { backgroundColor: theme.colors.surface }]}>
         <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Profile</Text>
       </View>
@@ -70,7 +109,6 @@ export const ProfileScreen = ({ user }: { user: User }) => {
         style={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* Profile Card */}
         <View style={[styles.profileCard, { backgroundColor: theme.colors.surface }]}>
           <View style={[styles.avatarContainer, { backgroundColor: theme.colors.primary }]}>
             <Text style={styles.avatarText}>{getInitials()}</Text>
@@ -84,11 +122,9 @@ export const ProfileScreen = ({ user }: { user: User }) => {
           </Text>
         </View>
 
-        {/* Account Section */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Account</Text>
           
-          {/* Nickname */}
           <View style={[styles.settingItem, { backgroundColor: theme.colors.surface }]}>
             <View style={styles.settingContent}>
               <View style={[styles.iconContainer, { backgroundColor: theme.colors.primary + '20' }]}>
@@ -142,7 +178,6 @@ export const ProfileScreen = ({ user }: { user: User }) => {
             )}
           </View>
 
-          {/* Email */}
           <View style={[styles.settingItem, { backgroundColor: theme.colors.surface }]}>
             <View style={styles.settingContent}>
               <View style={[styles.iconContainer, { backgroundColor: theme.colors.primary + '20' }]}>
@@ -157,11 +192,9 @@ export const ProfileScreen = ({ user }: { user: User }) => {
           </View>
         </View>
 
-        {/* Preferences Section */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Preferences</Text>
           
-          {/* Theme Toggle */}
           <View style={[styles.settingItem, { backgroundColor: theme.colors.surface }]}>
             <View style={styles.settingContent}>
               <View style={[styles.iconContainer, { backgroundColor: theme.colors.primary + '20' }]}>
@@ -177,7 +210,6 @@ export const ProfileScreen = ({ user }: { user: User }) => {
             <ThemeToggle />
           </View>
 
-          {/* Year Selector */}
           <TouchableOpacity 
             style={[styles.settingItem, { backgroundColor: theme.colors.surface }]}
             onPress={() => setShowYearPicker(!showYearPicker)}
@@ -194,7 +226,6 @@ export const ProfileScreen = ({ user }: { user: User }) => {
             <Ionicons name={showYearPicker ? "chevron-up" : "chevron-down"} size={20} color={theme.colors.textSecondary} />
           </TouchableOpacity>
 
-          {/* Year Picker Dropdown */}
           {showYearPicker && (
             <View style={[styles.yearPicker, { backgroundColor: theme.colors.surface }]}>
               {availableYears.map(year => (
@@ -226,7 +257,154 @@ export const ProfileScreen = ({ user }: { user: User }) => {
           )}
         </View>
 
-        {/* Actions Section */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Export Data</Text>
+          
+          <TouchableOpacity 
+            style={[styles.settingItem, { backgroundColor: theme.colors.surface }]}
+            onPress={() => setShowDownloadOptions(!showDownloadOptions)}
+          >
+            <View style={styles.settingContent}>
+              <View style={[styles.iconContainer, { backgroundColor: theme.colors.primary + '20' }]}>
+                <Ionicons name="download-outline" size={20} color={theme.colors.primary} />
+              </View>
+              <View style={styles.settingInfo}>
+                <Text style={[styles.settingLabel, { color: theme.colors.textSecondary }]}>Monthly Report</Text>
+                <Text style={[styles.settingValue, { color: theme.colors.text }]}>Download Data</Text>
+              </View>
+            </View>
+            <Ionicons name={showDownloadOptions ? "chevron-up" : "chevron-down"} size={20} color={theme.colors.textSecondary} />
+          </TouchableOpacity>
+
+          {showDownloadOptions && (
+            <View style={[styles.downloadOptionsContainer, { backgroundColor: theme.colors.surface }]}>
+              <TouchableOpacity 
+                style={[styles.settingItem, { backgroundColor: 'transparent', marginBottom: 0 }]}
+                onPress={() => setShowExportYearPicker(!showExportYearPicker)}
+              >
+                <View style={styles.settingContent}>
+                  <View style={[styles.iconContainer, { backgroundColor: theme.colors.primary + '20' }]}>
+                    <Ionicons name="calendar" size={20} color={theme.colors.primary} />
+                  </View>
+                  <View style={styles.settingInfo}>
+                    <Text style={[styles.settingLabel, { color: theme.colors.textSecondary }]}>Year</Text>
+                    <Text style={[styles.settingValue, { color: theme.colors.text }]}>{selectedExportYear}</Text>
+                  </View>
+                </View>
+                <Ionicons name={showExportYearPicker ? "chevron-up" : "chevron-down"} size={20} color={theme.colors.textSecondary} />
+              </TouchableOpacity>
+
+              {showExportYearPicker && (
+                <View style={[styles.yearPicker, { backgroundColor: theme.colors.background, marginLeft: 16, marginRight: 16 }]}>
+                  {exportYears.map(year => (
+                    <TouchableOpacity
+                      key={year}
+                      style={[
+                        styles.yearOption,
+                        { borderBottomColor: theme.colors.border },
+                        selectedExportYear === year && { backgroundColor: theme.colors.primary + '10' }
+                      ]}
+                      onPress={() => {
+                        setSelectedExportYear(year);
+                        setShowExportYearPicker(false);
+                      }}
+                    >
+                      <Text style={[
+                        styles.yearText,
+                        { color: theme.colors.text },
+                        selectedExportYear === year && { color: theme.colors.primary, fontWeight: 'bold' }
+                      ]}>
+                        {year}
+                      </Text>
+                      {selectedExportYear === year && (
+                        <Ionicons name="checkmark" size={20} color={theme.colors.primary} />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              <TouchableOpacity 
+                style={[styles.settingItem, { backgroundColor: 'transparent', marginBottom: 0 }]}
+                onPress={() => setShowMonthPicker(!showMonthPicker)}
+              >
+                <View style={styles.settingContent}>
+                  <View style={[styles.iconContainer, { backgroundColor: theme.colors.primary + '20' }]}>
+                    <Ionicons name="calendar-outline" size={20} color={theme.colors.primary} />
+                  </View>
+                  <View style={styles.settingInfo}>
+                    <Text style={[styles.settingLabel, { color: theme.colors.textSecondary }]}>Month</Text>
+                    <Text style={[styles.settingValue, { color: theme.colors.text }]}>{months[selectedExportMonth - 1]}</Text>
+                  </View>
+                </View>
+                <Ionicons name={showMonthPicker ? "chevron-up" : "chevron-down"} size={20} color={theme.colors.textSecondary} />
+              </TouchableOpacity>
+
+              {showMonthPicker && (
+                <View style={[styles.yearPicker, { backgroundColor: theme.colors.background, marginLeft: 16, marginRight: 16 }]}>
+                  {months.map((month, index) => (
+                    <TouchableOpacity
+                      key={month}
+                      style={[
+                        styles.yearOption,
+                        { borderBottomColor: theme.colors.border },
+                        selectedExportMonth === index + 1 && { backgroundColor: theme.colors.primary + '10' }
+                      ]}
+                      onPress={() => {
+                        setSelectedExportMonth(index + 1);
+                        setShowMonthPicker(false);
+                      }}
+                    >
+                      <Text style={[
+                        styles.yearText,
+                        { color: theme.colors.text },
+                        selectedExportMonth === index + 1 && { color: theme.colors.primary, fontWeight: 'bold' }
+                      ]}>
+                        {month}
+                      </Text>
+                      {selectedExportMonth === index + 1 && (
+                        <Ionicons name="checkmark" size={20} color={theme.colors.primary} />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
+              <View style={styles.exportButtons}>
+                <TouchableOpacity 
+                  style={[styles.exportButton, { backgroundColor: theme.colors.primary }]}
+                  onPress={() => handleExport('json')}
+                  disabled={exporting}
+                >
+                  {exporting ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="code-outline" size={20} color="#FFFFFF" />
+                      <Text style={styles.exportButtonText}>JSON</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={[styles.exportButton, { backgroundColor: theme.colors.error }]}
+                  onPress={() => handleExport('pdf')}
+                  disabled={exporting}
+                >
+                  {exporting ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <>
+                      <Ionicons name="document-text-outline" size={20} color="#FFFFFF" />
+                      <Text style={styles.exportButtonText}>PDF</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+        </View>
+
         <View style={styles.section}>
           <TouchableOpacity 
             style={[styles.logoutButton, { backgroundColor: theme.colors.error }]} 
@@ -237,7 +415,6 @@ export const ProfileScreen = ({ user }: { user: User }) => {
           </TouchableOpacity>
         </View>
 
-        {/* App Info */}
         <View style={styles.appInfo}>
           <Text style={[styles.appInfoText, { color: theme.colors.textSecondary }]}>
             Expense Tracker v1.0.0
@@ -400,5 +577,31 @@ const styles = StyleSheet.create({
   appInfoText: {
     fontSize: 12,
     marginBottom: 4,
+  },
+  exportButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
+  exportButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 8,
+  },
+  exportButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  downloadOptionsContainer: {
+    marginTop: -8,
+    marginBottom: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
+    paddingVertical: 8,
   },
 });

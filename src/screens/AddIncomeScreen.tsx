@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Modal, FlatList, ScrollView, SafeAreaView, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, Modal, FlatList, ScrollView, SafeAreaView, ActivityIndicator, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../services/supabase';
 import { useFocusEffect } from '@react-navigation/native';
@@ -35,6 +35,7 @@ export const AddIncomeScreen = ({ user }: { user: User }) => {
   const navigation = useNavigation<BottomTabNavigationProp<TabParamList>>();
   const { theme } = useAppTheme();
   const { selectedYear } = useDate();
+  const scrollViewRef = useRef<ScrollView>(null);
   
   const [amount, setAmount] = useState('');
   const [categories, setCategories] = useState<Category[]>([]);
@@ -55,11 +56,9 @@ export const AddIncomeScreen = ({ user }: { user: User }) => {
           .eq('type', 'income');
 
         if (error) {
-          console.error('Error fetching income categories:', error);
           setCategories([]);
           setSelectedCategoryId('');
         } else {
-          // Sort with Salary first, then alphabetically
           const categories = fetchedCategories?.sort((a, b) => {
             if (a.name === 'Salary') return -1;
             if (b.name === 'Salary') return 1;
@@ -70,7 +69,6 @@ export const AddIncomeScreen = ({ user }: { user: User }) => {
           setSelectedCategoryId(categories[0]?.id || '');
         }
       } catch (error) {
-        console.error('Error fetching income categories:', error);
         setCategories([]);
         setSelectedCategoryId('');
       }
@@ -80,11 +78,9 @@ export const AddIncomeScreen = ({ user }: { user: User }) => {
     if (user?.id) fetchIncomeCategories();
   }, [user]);
 
-  // Update selected date when year changes
   useEffect(() => {
     const currentDate = new Date(selectedDate);
     const newDate = new Date(selectedYear, currentDate.getMonth(), currentDate.getDate());
-    // Only update if the year is different
     if (currentDate.getFullYear() !== selectedYear) {
       setSelectedDate(newDate);
     }
@@ -104,8 +100,10 @@ export const AddIncomeScreen = ({ user }: { user: User }) => {
       user_id: user.id,
       category_id: selectedCategoryId,
       amount: Number(amount),
-      description,
-      transaction_date: selectedDate.toISOString().split('T')[0],
+      description: description || `${categories.find(cat => cat.id === selectedCategoryId)?.name} income`,
+      transaction_date: selectedDate.getFullYear() + '-' + 
+        String(selectedDate.getMonth() + 1).padStart(2, '0') + '-' + 
+        String(selectedDate.getDate()).padStart(2, '0'),
       type: 'income',
     });
     setLoading(false);
@@ -117,23 +115,32 @@ export const AddIncomeScreen = ({ user }: { user: User }) => {
       setDescription('');
       setSelectedDate(new Date());
       if (categories.length > 0) setSelectedCategoryId(categories[0].id);
-      navigation.navigate('Home');
+      setTimeout(() => {
+        navigation.navigate('Home');
+      }, 300);
     }
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: theme.colors.background }]}>
-      {/* Header */}
-      <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
-        <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Add Income</Text>
-      </View>
+    <KeyboardAvoidingView 
+      style={[styles.container, { backgroundColor: theme.colors.background }]}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
+    >
+      <SafeAreaView style={styles.safeArea}>
+        <View style={[styles.header, { backgroundColor: theme.colors.surface, borderBottomColor: theme.colors.border }]}>
+          <Text style={[styles.headerTitle, { color: theme.colors.text }]}>Add Income</Text>
+        </View>
 
-      <ScrollView 
-        style={styles.content}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* Amount Section */}
+        <View style={styles.contentContainer}>
+          <ScrollView 
+            ref={scrollViewRef}
+            style={styles.content}
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+          >
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Amount</Text>
           <View style={[styles.inputContainer, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface }]}>
@@ -149,7 +156,6 @@ export const AddIncomeScreen = ({ user }: { user: User }) => {
           </View>
         </View>
 
-        {/* Category Section */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Category</Text>
           {loadingCategories ? (
@@ -158,7 +164,6 @@ export const AddIncomeScreen = ({ user }: { user: User }) => {
             <Text style={[styles.loadingText, { color: theme.colors.textSecondary }]}>No categories found</Text>
           ) : (
             <>
-              {/* Quick Categories */}
               <View style={styles.quickCategoriesRow}>
                 {categories.slice(0, 3).map(category => (
                   <TouchableOpacity
@@ -185,7 +190,6 @@ export const AddIncomeScreen = ({ user }: { user: User }) => {
                 ))}
               </View>
               
-              {/* More Categories Button */}
               {categories.length > 3 && (
                 <TouchableOpacity
                   style={[styles.moreButton, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}
@@ -196,7 +200,6 @@ export const AddIncomeScreen = ({ user }: { user: User }) => {
                 </TouchableOpacity>
               )}
               
-              {/* Selected Category */}
               {selectedCategoryId && (
                 <View style={[styles.selectedCategory, { backgroundColor: theme.colors.surface, borderColor: theme.colors.border }]}>
                   <Text style={[styles.selectedCategoryText, { color: theme.colors.text }]}>
@@ -208,8 +211,7 @@ export const AddIncomeScreen = ({ user }: { user: User }) => {
           )}
         </View>
 
-        {/* Description Section */}
-        <View style={styles.section}>
+        <View style={[styles.section, { marginBottom: 40 }]}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Description</Text>
           <TextInput
             style={[styles.textInput, { borderColor: theme.colors.border, backgroundColor: theme.colors.surface, color: theme.colors.text }]}
@@ -219,10 +221,17 @@ export const AddIncomeScreen = ({ user }: { user: User }) => {
             onChangeText={setDescription}
             multiline
             numberOfLines={3}
+            textAlignVertical="top"
+            onFocus={() => {
+              setTimeout(() => {
+                if (scrollViewRef.current) {
+                  scrollViewRef.current.scrollToEnd({ animated: true });
+                }
+              }, 100);
+            }}
           />
         </View>
 
-        {/* Date Section */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: theme.colors.text }]}>Date</Text>
           <DateSlider 
@@ -231,22 +240,27 @@ export const AddIncomeScreen = ({ user }: { user: User }) => {
           />
         </View>
 
-      </ScrollView>
+          </ScrollView>
 
-      {/* Floating Action Button */}
-      <TouchableOpacity 
-        style={[styles.fab, { backgroundColor: theme.colors.primary }]} 
-        onPress={handleAddIncome} 
-        disabled={loading}
-      >
-        {loading ? (
-          <ActivityIndicator size="small" color="#FFFFFF" />
-        ) : (
-          <Ionicons name="add" size={28} color="#FFFFFF" />
-        )}
-      </TouchableOpacity>
+          <View style={styles.buttonContainer}>
+            <TouchableOpacity 
+              style={[styles.submitButton, { backgroundColor: theme.colors.primary }]} 
+              onPress={handleAddIncome} 
+              disabled={loading}
+            >
+              {loading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <View style={styles.buttonContent}>
+                  <Ionicons name="add-circle" size={24} color="#FFFFFF" />
+                  <Text style={styles.buttonText}>Add Income</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </SafeAreaView>
 
-      {/* Category Modal */}
       <Modal
         visible={showCategoryModal}
         animationType="slide"
@@ -297,12 +311,15 @@ export const AddIncomeScreen = ({ user }: { user: User }) => {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+  },
+  safeArea: {
     flex: 1,
   },
   header: {
@@ -315,9 +332,15 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
   },
+  contentContainer: {
+    flex: 1,
+  },
   content: {
     flex: 1,
+  },
+  scrollContent: {
     padding: 20,
+    paddingBottom: 120, // Extra padding for keyboard
   },
   section: {
     marginBottom: 24,
@@ -401,20 +424,31 @@ const styles = StyleSheet.create({
     minHeight: 80,
     textAlignVertical: 'top',
   },
-  fab: {
-    position: 'absolute',
-    bottom: 30,
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+  buttonContainer: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    paddingTop: 10,
+  },
+  submitButton: {
+    paddingVertical: 16,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  buttonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
   },
   categoryIconContainer: {
     width: 40,

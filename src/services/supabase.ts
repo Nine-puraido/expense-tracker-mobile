@@ -1,12 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Database } from '../types/supabase';
-import bcrypt from 'bcrypt';
+import CryptoJS from 'crypto-js';
+import * as Crypto from 'expo-crypto';
 import { config } from '../config/env';
 import { validateAndSanitize, safeValidate } from '../utils/validation';
 import { rateLimiters } from '../utils/rateLimiter';
 
-// Initialize Supabase client with secure environment configuration
 export const supabase = createClient<Database>(config.supabaseUrl, config.supabaseAnonKey, {
   auth: {
     storage: AsyncStorage,
@@ -16,17 +16,121 @@ export const supabase = createClient<Database>(config.supabaseUrl, config.supaba
   },
 });
 
-// Custom Auth service using users table
-export const authService = {
-  // Sign up: hash password and insert user
+export const supabaseAuthService = {
   signUp: async (email: string, password: string, nickname: string) => {
-    // Check rate limit
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          nickname: nickname,
+        }
+      }
+    });
+    
+    if (error) return { data: null, error };
+    
+    return { data: data.user, error: null };
+  },
+
+  signIn: async (email: string, password: string) => {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    
+    if (error) return { data: null, error };
+    
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', data.user.id)
+      .single();
+    
+    return { 
+      data: {
+        id: data.user.id,
+        email: data.user.email!,
+        nickname: profile?.username,
+        created_at: data.user.created_at,
+      }, 
+      error: null 
+    };
+  },
+
+  signOut: async () => {
+    const { error } = await supabase.auth.signOut();
+    return { error };
+  },
+
+  getCurrentUser: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) return { data: null, error: null };
+    
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+    
+    return {
+      data: {
+        id: user.id,
+        email: user.email!,
+        nickname: profile?.username,
+        created_at: user.created_at,
+      },
+      error: null
+    };
+  },
+
+  updateProfile: async (updates: { nickname?: string }) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return { data: null, error: { message: 'Not authenticated' } };
+
+    // First check if profile exists
+    const { data: existingProfile } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('id', user.id)
+      .single();
+
+    if (!existingProfile) {
+      // Create profile if it doesn't exist
+      const { data: newProfile, error: createError } = await supabase
+        .from('profiles')
+        .insert({ 
+          id: user.id,
+          username: updates.nickname || user.user_metadata?.nickname || '',
+          created_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+      
+      return { data: newProfile, error: createError };
+    }
+
+    // Update existing profile
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({ username: updates.nickname })
+      .eq('id', user.id)
+      .select()
+      .single();
+
+    return { data, error };
+  },
+
+};
+
+export const authService = {
+  signUp: async (email: string, password: string, nickname: string) => {
     const rateLimit = rateLimiters.auth(email);
     if (!rateLimit.allowed) {
       return { data: null, error: { message: rateLimit.error || 'Too many requests' } };
     }
 
-    // Validate and sanitize input
     const validation = safeValidate(() => validateAndSanitize.userSignUp({ email, password, nickname }));
     if (!validation.success) {
       return { data: null, error: { message: validation.error || 'Invalid input' } };
@@ -34,9 +138,18 @@ export const authService = {
     
     const { email: validEmail, password: validPassword, nickname: validNickname } = validation.data!;
     
-    const saltRounds = 12;
-    const password_hash = await bcrypt.hash(validPassword, saltRounds);
-    // Check if user already exists
+    let password_hash: string;
+    try {
+      const saltBytes = await Crypto.getRandomBytesAsync(16);
+      const salt = Array.from(saltBytes, byte => byte.toString(16).padStart(2, '0')).join('');
+      
+      password_hash = CryptoJS.PBKDF2(validPassword, salt, {
+        keySize: 256/32,
+        iterations: 10000
+      }).toString() + ':' + salt;
+    } catch (cryptoError) {
+      return { data: null, error: { message: 'Password hashing failed. Please try again.' } };
+    }
     const { data: existing, error: existingError } = await supabase
       .from('users')
       .select('id')
@@ -46,10 +159,8 @@ export const authService = {
       return { data: null, error: { message: 'User already registered' } };
     }
     if (existingError && existingError.code !== 'PGRST116') {
-      // Ignore "No rows found" error
       return { data: null, error: existingError };
     }
-    // Insert new user
     const { data, error } = await supabase
       .from('users')
       .insert({ email: validEmail, password_hash, nickname: validNickname })
@@ -58,15 +169,12 @@ export const authService = {
     return { data, error };
   },
 
-  // Sign in: fetch user and compare hash
   signIn: async (email: string, password: string) => {
-    // Check rate limit
     const rateLimit = rateLimiters.auth(email);
     if (!rateLimit.allowed) {
       return { data: null, error: { message: rateLimit.error || 'Too many requests' } };
     }
 
-    // Validate and sanitize input
     const validation = safeValidate(() => validateAndSanitize.userSignIn({ email, password }));
     if (!validation.success) {
       return { data: null, error: { message: validation.error || 'Invalid input' } };
@@ -86,20 +194,44 @@ export const authService = {
       return { data: null, error: { message: 'Invalid email or password' } };
     }
     
-    // Compare password with bcrypt
-    const isPasswordValid = await bcrypt.compare(validPassword, data.password_hash);
-    if (!isPasswordValid) {
-      return { data: null, error: { message: 'Invalid email or password' } };
+    try {
+      const [hash, salt] = data.password_hash.split(':');
+      if (!hash || !salt) {
+        return { data: null, error: { message: 'Invalid password format in database' } };
+      }
+      const passwordHash = CryptoJS.PBKDF2(validPassword, salt, {
+        keySize: 256/32,
+        iterations: 10000
+      }).toString();
+    
+      if (passwordHash !== hash) {
+        return { data: null, error: { message: 'Invalid email or password' } };
+      }
+    } catch (cryptoError) {
+      return { data: null, error: { message: 'Authentication failed. Please try again.' } };
     }
-    // Success: return user data (omit password_hash)
     const { password_hash: _, ...user } = data;
     return { data: user, error: null };
   },
+
+  updateUser: async (userId: string, updates: Partial<{ nickname: string; email: string }>) => {
+    
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .update(updates)
+        .eq('id', userId)
+        .select('id, email, nickname, created_at')
+        .single();
+        
+      return { data, error };
+    } catch (exception) {
+      return { data: null, error: { message: 'Failed to update user' } };
+    }
+  },
 };
 
-// Profile service
 export const profileService = {
-  // Get user profile
   getProfile: async (userId: string) => {
     const { data, error } = await supabase
       .from('profiles')
@@ -109,7 +241,6 @@ export const profileService = {
     return { data, error };
   },
 
-  // Update user profile
   updateProfile: async (userId: string, updates: Partial<Database['public']['Tables']['profiles']['Update']>) => {
     const { data, error } = await supabase
       .from('profiles')
@@ -120,7 +251,6 @@ export const profileService = {
     return { data, error };
   },
 
-  // Create user profile
   createProfile: async (profile: Database['public']['Tables']['profiles']['Insert']) => {
     const { data, error } = await supabase
       .from('profiles')
@@ -131,9 +261,7 @@ export const profileService = {
   },
 };
 
-// Categories service
 export const categoryService = {
-  // Get user categories
   getCategories: async (userId: string) => {
     const { data, error } = await supabase
       .from('categories')
@@ -143,23 +271,26 @@ export const categoryService = {
     return { data, error };
   },
 
-  // Create category
   createCategory: async (category: Database['public']['Tables']['categories']['Insert']) => {
-    // Validate and sanitize input
     const validation = safeValidate(() => validateAndSanitize.category(category));
     if (!validation.success) {
       return { data: null, error: { message: validation.error || 'Invalid category data' } };
     }
     
+    const categoryData = {
+      ...validation.data!,
+      user_id: category.user_id,
+      color: category.color || '#007AFF'
+    };
+    
     const { data, error } = await supabase
       .from('categories')
-      .insert(validation.data!)
+      .insert(categoryData)
       .select()
       .single();
     return { data, error };
   },
 
-  // Update category
   updateCategory: async (categoryId: string, updates: Partial<Database['public']['Tables']['categories']['Update']>) => {
     const { data, error } = await supabase
       .from('categories')
@@ -170,7 +301,6 @@ export const categoryService = {
     return { data, error };
   },
 
-  // Delete category
   deleteCategory: async (categoryId: string) => {
     const { error } = await supabase
       .from('categories')
@@ -180,9 +310,7 @@ export const categoryService = {
   },
 };
 
-// Transactions service
 export const transactionService = {
-  // Get user transactions
   getTransactions: async (userId: string, filters?: {
     type?: 'expense' | 'income';
     startDate?: string;
@@ -193,7 +321,7 @@ export const transactionService = {
       .from('transactions')
       .select(`
         *,
-        category:categories(*)
+        category:categories!transactions_category_id_fkey(*)
       `)
       .eq('user_id', userId)
       .order('transaction_date', { ascending: false });
@@ -215,32 +343,34 @@ export const transactionService = {
     return { data, error };
   },
 
-  // Create transaction
   createTransaction: async (transaction: Database['public']['Tables']['transactions']['Insert']) => {
-    // Check rate limit
     const rateLimit = rateLimiters.transactionCreate(transaction.user_id || 'unknown');
     if (!rateLimit.allowed) {
       return { data: null, error: { message: rateLimit.error || 'Too many requests' } };
     }
 
-    // Validate and sanitize input
     const validation = safeValidate(() => validateAndSanitize.transaction(transaction));
     if (!validation.success) {
       return { data: null, error: { message: validation.error || 'Invalid transaction data' } };
     }
     
+    const transactionData = {
+      ...validation.data!,
+      user_id: transaction.user_id,
+      category_id: transaction.category_id
+    };
+    
     const { data, error } = await supabase
       .from('transactions')
-      .insert(validation.data!)
+      .insert(transactionData)
       .select(`
         *,
-        category:categories(*)
+        category:categories!transactions_category_id_fkey(*)
       `)
       .single();
     return { data, error };
   },
 
-  // Update transaction
   updateTransaction: async (transactionId: string, updates: Partial<Database['public']['Tables']['transactions']['Update']>) => {
     const { data, error } = await supabase
       .from('transactions')
@@ -248,13 +378,12 @@ export const transactionService = {
       .eq('id', transactionId)
       .select(`
         *,
-        category:categories(*)
+        category:categories!transactions_category_id_fkey(*)
       `)
       .single();
     return { data, error };
   },
 
-  // Delete transaction
   deleteTransaction: async (transactionId: string) => {
     const { error } = await supabase
       .from('transactions')
@@ -263,13 +392,12 @@ export const transactionService = {
     return { error };
   },
 
-  // Get analytics data
   getAnalytics: async (userId: string, startDate: string, endDate: string) => {
     const { data, error } = await supabase
       .from('transactions')
       .select(`
         *,
-        category:categories(*)
+        category:categories!transactions_category_id_fkey(*)
       `)
       .eq('user_id', userId)
       .gte('transaction_date', startDate)
@@ -279,9 +407,7 @@ export const transactionService = {
   },
 };
 
-// Budget limits service
 export const budgetLimitService = {
-  // Get user budget limits
   getBudgetLimits: async (userId: string) => {
     const { data, error } = await supabase
       .from('budget_limits')
@@ -293,7 +419,6 @@ export const budgetLimitService = {
     return { data, error };
   },
 
-  // Create budget limit
   createBudgetLimit: async (budgetLimit: Database['public']['Tables']['budget_limits']['Insert']) => {
     const { data, error } = await supabase
       .from('budget_limits')
@@ -306,7 +431,6 @@ export const budgetLimitService = {
     return { data, error };
   },
 
-  // Update budget limit
   updateBudgetLimit: async (budgetLimitId: string, updates: Partial<Database['public']['Tables']['budget_limits']['Update']>) => {
     const { data, error } = await supabase
       .from('budget_limits')
@@ -320,7 +444,6 @@ export const budgetLimitService = {
     return { data, error };
   },
 
-  // Delete budget limit
   deleteBudgetLimit: async (budgetLimitId: string) => {
     const { error } = await supabase
       .from('budget_limits')
@@ -330,9 +453,7 @@ export const budgetLimitService = {
   },
 };
 
-// Recurring transactions service
 export const recurringTransactionService = {
-  // Get user recurring transactions
   getRecurringTransactions: async (userId: string) => {
     const { data, error } = await supabase
       .from('recurring_transactions')
@@ -345,7 +466,6 @@ export const recurringTransactionService = {
     return { data, error };
   },
 
-  // Create recurring transaction
   createRecurringTransaction: async (recurringTransaction: Database['public']['Tables']['recurring_transactions']['Insert']) => {
     const { data, error } = await supabase
       .from('recurring_transactions')
@@ -358,7 +478,6 @@ export const recurringTransactionService = {
     return { data, error };
   },
 
-  // Update recurring transaction
   updateRecurringTransaction: async (recurringTransactionId: string, updates: Partial<Database['public']['Tables']['recurring_transactions']['Update']>) => {
     const { data, error } = await supabase
       .from('recurring_transactions')
@@ -372,7 +491,6 @@ export const recurringTransactionService = {
     return { data, error };
   },
 
-  // Delete recurring transaction
   deleteRecurringTransaction: async (recurringTransactionId: string) => {
     const { error } = await supabase
       .from('recurring_transactions')

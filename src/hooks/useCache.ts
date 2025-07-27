@@ -16,7 +16,7 @@ export function useCache<T>(
   fetcher: () => Promise<T>,
   options: UseCacheOptions = {}
 ) {
-  const { ttl = 5 * 60 * 1000, staleWhileRevalidate = true } = options; // Default 5 minutes TTL
+  const { ttl = 5 * 60 * 1000, staleWhileRevalidate = true } = options;
   const [data, setData] = useState<T | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<Error | null>(null);
@@ -49,7 +49,6 @@ export function useCache<T>(
   }, [ttl]);
 
   const fetchData = useCallback(async (cacheKey: string, shouldUpdateLoading = true) => {
-    // Check if there's already an active request for this key
     const activeRequest = activeRequestsRef.current.get(cacheKey);
     if (activeRequest) {
       return activeRequest;
@@ -91,7 +90,6 @@ export function useCache<T>(
       setCachedData(key, newData);
       setData(newData);
     } else {
-      // Refetch data
       await fetchData(key);
     }
   }, [key, getCachedData, setCachedData, fetchData]);
@@ -108,12 +106,11 @@ export function useCache<T>(
     if (cachedData) {
       setData(cachedData);
       
-      // Check if data is stale and should be revalidated
       const entry = cacheRef.current.get(key);
       if (entry && staleWhileRevalidate) {
-        const isStale = Date.now() > (entry.timestamp + ttl * 0.8); // 80% of TTL
+        const isStale = Date.now() > (entry.timestamp + ttl * 0.8);
         if (isStale) {
-          fetchData(key, false); // Fetch in background without loading state
+          fetchData(key, false);
         }
       }
     } else {
@@ -121,10 +118,8 @@ export function useCache<T>(
     }
   }, [key, getCachedData, fetchData, ttl, staleWhileRevalidate]);
 
-  // Cleanup function to prevent memory leaks
   useEffect(() => {
     return () => {
-      // Cancel any pending requests
       activeRequestsRef.current.delete(key);
     };
   }, [key]);
@@ -139,8 +134,5 @@ export function useCache<T>(
   };
 }
 
-// Global cache cleanup function
 export const clearAllCache = () => {
-  // This would clear all cache entries
-  // Implementation depends on your cache strategy
 };

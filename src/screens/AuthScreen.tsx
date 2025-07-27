@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { useAppTheme } from '../contexts/ThemeContext';
 import { useAuth } from '../contexts/AuthContext';
-import { authService } from '../services/supabase';
+import { supabaseAuthService } from '../services/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { User } from '../types';
 
@@ -36,12 +36,15 @@ export const AuthScreen: React.FC = () => {
     }
     setLoading(true);
     try {
-      const { data, error } = await authService.signUp(email, password, nickname);
+      const { data, error } = await supabaseAuthService.signUp(email, password, nickname);
       if (error) {
         Alert.alert('Sign Up Error', error.message || 'Failed to create account');
       } else {
-        Alert.alert('Success', 'Account created successfully! You can now sign in.');
+        Alert.alert('Success', 'Account created successfully! Please check your email to verify your account.');
         setIsSignUp(false);
+        setEmail('');
+        setPassword('');
+        setNickname('');
       }
     } catch (error) {
       Alert.alert('Error', 'Something went wrong. Please try again.');
@@ -57,12 +60,13 @@ export const AuthScreen: React.FC = () => {
     }
     setLoading(true);
     try {
-      const { data, error } = await authService.signIn(email, password);
+      const { data, error } = await supabaseAuthService.signIn(email, password);
       if (error) {
         Alert.alert('Sign In Error', error.message || 'Invalid email or password');
       } else {
-        setUser(data);
         Alert.alert('Success', `Welcome, ${data.nickname || data.email}!`);
+        setEmail('');
+        setPassword('');
       }
     } catch (error) {
       Alert.alert('Error', 'Something went wrong. Please try again.');
@@ -70,6 +74,7 @@ export const AuthScreen: React.FC = () => {
       setLoading(false);
     }
   };
+
 
   const styles = StyleSheet.create({
     container: {
@@ -197,7 +202,7 @@ export const AuthScreen: React.FC = () => {
             style={styles.input}
             value={password}
             onChangeText={setPassword}
-            placeholder="Password"
+            placeholder={isSignUp ? "Password (8+ chars, A-Z, a-z, 0-9)" : "Password"}
             placeholderTextColor={theme.colors.textSecondary}
             secureTextEntry={true}
             autoCapitalize="none"
@@ -221,6 +226,7 @@ export const AuthScreen: React.FC = () => {
               {loading ? 'Please wait...' : (isSignUp ? 'Create Account' : 'Sign In')}
             </Text>
           </TouchableOpacity>
+
         </View>
 
         <View style={styles.toggleContainer}>

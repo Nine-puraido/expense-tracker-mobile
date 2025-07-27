@@ -34,7 +34,6 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     };
   });
 
-  // Load theme mode from storage
   useEffect(() => {
     (async () => {
       const stored = await AsyncStorage.getItem(STORAGE_KEYS.THEME);
@@ -44,7 +43,6 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     })();
   }, []);
 
-  // Listen to system changes if mode is 'system'
   useEffect(() => {
     if (mode === 'system') {
       const sub = Appearance.addChangeListener(({ colorScheme }) => {
@@ -53,7 +51,6 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
           colors: colorScheme === 'dark' ? DARK_THEME : LIGHT_THEME,
         });
       });
-      // Set initial
       const colorScheme = Appearance.getColorScheme();
       setTheme({
         dark: colorScheme === 'dark',
@@ -68,8 +65,6 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       return undefined;
     }
   }, [mode]);
-
-  // Toggle between light/dark/system
   const toggleTheme = useCallback(() => {
     setMode(prev => {
       let next: 'light' | 'dark' | 'system';

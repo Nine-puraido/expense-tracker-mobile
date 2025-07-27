@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions, TouchableOpacity, Animated, Modal, Platform, Button } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Dimensions, TouchableOpacity, Animated, Modal, Platform, Button, RefreshControl } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { supabase } from '../services/supabase';
@@ -9,6 +9,7 @@ import { useAppTheme } from '../contexts/ThemeContext';
 import { User, Transaction, Category } from '../types';
 import { ExpenseChart } from '../components/ExpenseChart';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { useFocusEffect } from '@react-navigation/native';
 
 export const AnalyticsScreen = ({ user }: { user: User }) => {
   const [data, setData] = useState<Transaction[]>([]);
@@ -28,49 +29,74 @@ export const AnalyticsScreen = ({ user }: { user: User }) => {
   const [customStart, setCustomStart] = useState(() => {
     const now = new Date();
     const first = new Date(now.getFullYear(), now.getMonth(), 1);
-    return first.toISOString().split('T')[0];
+    return first.getFullYear() + '-' + 
+      String(first.getMonth() + 1).padStart(2, '0') + '-' + 
+      String(first.getDate()).padStart(2, '0');
   });
   const [customEnd, setCustomEnd] = useState(() => {
     const now = new Date();
-    return now.toISOString().split('T')[0];
+    return now.getFullYear() + '-' + 
+      String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+      String(now.getDate()).padStart(2, '0');
   });
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (isRefreshing = false) => {
     if (!user) return;
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('*')
-      .eq('user_id', user.id);
-    if (!error && data) {
-      setData(data as Transaction[]);
-      // Animate content in
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 600,
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideAnim, {
-          toValue: 0,
-          duration: 600,
-          useNativeDriver: true,
-        }),
-      ]).start();
+    if (isRefreshing) {
+      setRefreshing(true);
     } else {
-      setData([]);
+      setLoading(true);
     }
-    setLoading(false);
+    
+    try {
+      const { data, error } = await supabase
+        .from('transactions')
+        .select('*')
+        .eq('user_id', user.id);
+      if (!error && data) {
+        setData(data as Transaction[]);
+        if (!isRefreshing) {
+          Animated.parallel([
+            Animated.timing(fadeAnim, {
+              toValue: 1,
+              duration: 600,
+              useNativeDriver: true,
+            }),
+            Animated.timing(slideAnim, {
+              toValue: 0,
+              duration: 600,
+              useNativeDriver: true,
+            }),
+          ]).start();
+        }
+      } else {
+        setData([]);
+      }
+    } catch (error) {
+      setData([]);
+    } finally {
+      if (isRefreshing) {
+        setRefreshing(false);
+      } else {
+        setLoading(false);
+      }
+    }
   }, [user, fadeAnim, slideAnim]);
 
-  useEffect(() => {
-    fetchData();
+  useFocusEffect(
+    useCallback(() => {
+      fetchData();
+    }, [fetchData])
+  );
+
+  const handleRefresh = useCallback(() => {
+    fetchData(true);
   }, [fetchData]);
 
   useEffect(() => {
-    // Group data for chart based on view
     if (!data.length) {
       setChartData(null);
       return;
@@ -80,7 +106,6 @@ export const AnalyticsScreen = ({ user }: { user: User }) => {
     let expenseData: number[] = [];
     const now = new Date();
     if (view === 'daily') {
-      // Show last 7 days (or all days in current month if you prefer)
       const days = Array.from({ length: 7 }, (_, i) => {
         const d = new Date(now);
         d.setDate(now.getDate() - (6 - i));
@@ -88,36 +113,39 @@ export const AnalyticsScreen = ({ user }: { user: User }) => {
       });
       labels = days.map(d => `${d.getMonth() + 1}/${d.getDate()}`);
       incomeData = days.map(d => {
-        const dateStr = d.toISOString().slice(0, 10);
+        const dateStr = d.getFullYear() + '-' + 
+          String(d.getMonth() + 1).padStart(2, '0') + '-' + 
+          String(d.getDate()).padStart(2, '0');
         return data.filter(t => t.type === 'income' && t.transaction_date === dateStr).reduce((sum, t) => sum + t.amount, 0);
       });
       expenseData = days.map(d => {
-        const dateStr = d.toISOString().slice(0, 10);
+        const dateStr = d.getFullYear() + '-' + 
+          String(d.getMonth() + 1).padStart(2, '0') + '-' + 
+          String(d.getDate()).padStart(2, '0');
         return data.filter(t => t.type === 'expense' && t.transaction_date === dateStr).reduce((sum, t) => sum + t.amount, 0);
       });
     } else if (view === 'weekly') {
-      // Group by week for the current year, label as 'Jul 11-17'
       const year = now.getFullYear();
       const weekMap: { [key: string]: { income: number; expense: number; start: Date; end: Date } } = {};
       data.forEach((t: any) => {
         const date = new Date(t.transaction_date);
         if (date.getFullYear() === year) {
-          // Get week start (Monday) and end (Sunday)
           const day = date.getDay();
-          const diffToMonday = (day + 6) % 7; // 0=Sunday, 1=Monday, ...
+          const diffToMonday = (day + 6) % 7;
           const weekStart = new Date(date);
           weekStart.setDate(date.getDate() - diffToMonday);
           weekStart.setHours(0,0,0,0);
           const weekEnd = new Date(weekStart);
           weekEnd.setDate(weekStart.getDate() + 6);
           weekEnd.setHours(0,0,0,0);
-          const key = weekStart.toISOString().split('T')[0];
+          const key = weekStart.getFullYear() + '-' + 
+            String(weekStart.getMonth() + 1).padStart(2, '0') + '-' + 
+            String(weekStart.getDate()).padStart(2, '0');
           if (!weekMap[key]) weekMap[key] = { income: 0, expense: 0, start: new Date(weekStart), end: new Date(weekEnd) };
           if (t.type === 'income') weekMap[key].income += t.amount;
           if (t.type === 'expense') weekMap[key].expense += t.amount;
         }
       });
-      // Sort by week start
       const sortedWeeks = Object.values(weekMap).sort((a, b) => a.start.getTime() - b.start.getTime());
       labels = sortedWeeks.map(w => {
         const start = w.start;
@@ -129,7 +157,6 @@ export const AnalyticsScreen = ({ user }: { user: User }) => {
       incomeData = sortedWeeks.map(w => Number(w.income) || 0);
       expenseData = sortedWeeks.map(w => Number(w.expense) || 0);
     } else if (view === 'monthly') {
-      // Group by month for the current year
       const year = now.getFullYear();
       const months: { [key: string]: { income: number; expense: number } } = {};
       for (let m = 0; m < 12; m++) {
@@ -148,7 +175,6 @@ export const AnalyticsScreen = ({ user }: { user: User }) => {
       incomeData = labels.map(l => Number(months[l].income) || 0);
       expenseData = labels.map(l => Number(months[l].expense) || 0);
     } else if (view === 'yearly') {
-      // Group by year (last 5 years)
       const years: { [key: string]: { income: number; expense: number } } = {};
       for (let y = now.getFullYear() - 4; y <= now.getFullYear(); y++) {
         years[y] = { income: 0, expense: 0 };
@@ -168,27 +194,34 @@ export const AnalyticsScreen = ({ user }: { user: User }) => {
     setChartData({ labels, incomeData, expenseData });
   }, [data, view]);
 
-  // Date range filtering logic (like HomeScreen)
   let rangeStart = '';
   let rangeEnd = '';
   if (period === 'month') {
     const now = new Date();
-    rangeStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-    rangeEnd = now.toISOString().split('T')[0];
+    const first = new Date(now.getFullYear(), now.getMonth(), 1);
+    rangeStart = first.getFullYear() + '-' + 
+      String(first.getMonth() + 1).padStart(2, '0') + '-' + 
+      String(first.getDate()).padStart(2, '0');
+    rangeEnd = now.getFullYear() + '-' + 
+      String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+      String(now.getDate()).padStart(2, '0');
   } else if (period === '2weeks') {
     const d = new Date();
     d.setDate(d.getDate() - 13);
-    rangeStart = d.toISOString().split('T')[0];
-    rangeEnd = new Date().toISOString().split('T')[0];
+    rangeStart = d.getFullYear() + '-' + 
+      String(d.getMonth() + 1).padStart(2, '0') + '-' + 
+      String(d.getDate()).padStart(2, '0');
+    const now = new Date();
+    rangeEnd = now.getFullYear() + '-' + 
+      String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+      String(now.getDate()).padStart(2, '0');
   } else if (period === 'custom') {
     rangeStart = customStart;
     rangeEnd = customEnd;
   }
 
-  // Filtered data for breakdown charts
   const filteredData = data.filter(t => t.transaction_date >= rangeStart && t.transaction_date <= rangeEnd);
 
-  // Calculate total for the selected period
   let totalIncome = 0;
   let totalExpense = 0;
   if (chartData) {
@@ -196,7 +229,6 @@ export const AnalyticsScreen = ({ user }: { user: User }) => {
     totalExpense = chartData.expenseData.reduce((sum: number, v: number) => sum + v, 0);
   }
 
-  // Fetch categories for legend and pie chart
   useEffect(() => {
     if (!user) return;
     const fetchCategories = async () => {
@@ -223,8 +255,15 @@ export const AnalyticsScreen = ({ user }: { user: User }) => {
           { useNativeDriver: false }
         )}
         scrollEventThrottle={16}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
+            tintColor={theme.colors.primary}
+            colors={[theme.colors.primary]}
+          />
+        }
       >
-        {/* Modern Header with Gradient */}
         <Animated.View style={[styles.header, { height: headerHeight }]}>
           <LinearGradient
             colors={theme.dark 
@@ -240,15 +279,9 @@ export const AnalyticsScreen = ({ user }: { user: User }) => {
               <Text style={styles.title}>Analytics</Text>
               <Text style={styles.subtitle}>Track your financial journey</Text>
             </View>
-            <TouchableOpacity style={styles.refreshBtn} onPress={fetchData}>
-              <BlurView intensity={80} tint={theme.dark ? 'dark' : 'light'} style={styles.refreshBtnBlur}>
-                <Ionicons name="refresh" size={20} color="#fff" />
-              </BlurView>
-            </TouchableOpacity>
           </View>
         </Animated.View>
 
-        {/* Modern Stats Cards */}
         <Animated.View style={[styles.statsContainer, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
           <View style={[styles.statCard, { 
             backgroundColor: theme.dark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
@@ -301,7 +334,6 @@ export const AnalyticsScreen = ({ user }: { user: User }) => {
           </View>
         </Animated.View>
 
-        {/* Modern Period Selector */}
         <View style={styles.periodContainer}>
           <Text style={[styles.periodTitle, { color: theme.colors.text }]}>Chart Period</Text>
           <View style={[styles.periodRow, { 
@@ -338,7 +370,6 @@ export const AnalyticsScreen = ({ user }: { user: User }) => {
           </View>
         </View>
 
-        {/* Modern Chart Card */}
         <Animated.View style={{ opacity: fadeAnim }}>
           <View style={[styles.chartCard, { 
             backgroundColor: theme.dark ? 'rgba(255, 255, 255, 0.05)' : '#FFFFFF',
@@ -418,7 +449,6 @@ export const AnalyticsScreen = ({ user }: { user: User }) => {
           </View>
         </Animated.View>
 
-        {/* Breakdown Period Selector (below line chart) */}
         <View style={styles.periodContainer}>
           <Text style={[styles.periodTitle, { color: theme.colors.text }]}>Breakdown Period</Text>
           <View style={[styles.periodRow, { 
@@ -472,7 +502,6 @@ export const AnalyticsScreen = ({ user }: { user: User }) => {
           </View>
         )}
 
-        {/* Pie Chart Card */}
         {categories.length > 0 && filteredData.length > 0 && (
           <ExpenseChart
             data={filteredData.filter((t: any) => t.type === 'expense').map((t: any) => ({ ...t, category: categories.find((c: any) => c.id === t.category_id) })).filter((t: any) => t.category)}
@@ -481,7 +510,6 @@ export const AnalyticsScreen = ({ user }: { user: User }) => {
           />
         )}
 
-        {/* Income Breakdown Pie Chart */}
         {categories.length > 0 && filteredData.some((t: any) => t.type === 'income') && (
           <ExpenseChart
             data={filteredData.filter((t: any) => t.type === 'income')
@@ -492,7 +520,6 @@ export const AnalyticsScreen = ({ user }: { user: User }) => {
           />
         )}
 
-        {/* Bar Chart: Expenses by Importance */}
         {filteredData.some((t: any) => t.type === 'expense' && t.importance) && (
           <ExpenseChart
             data={filteredData.filter((t: any) => t.type === 'expense').map((t: any) => ({ ...t, category: categories.find((c: any) => c.id === t.category_id) })).filter((t: any) => t.category)}
@@ -501,61 +528,86 @@ export const AnalyticsScreen = ({ user }: { user: User }) => {
           />
         )}
 
-        {/* Custom Date Pickers (use Modal for better UX) */}
-        <Modal
-          visible={showStartPicker}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setShowStartPicker(false)}
-        >
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' }}>
-            <View style={{ backgroundColor: theme.colors.surface, borderRadius: 16, padding: 20, elevation: 8 }}>
+        {showStartPicker && (
+          <View style={styles.datePickerOverlay}>
+            <View style={[styles.datePickerModal, { 
+              backgroundColor: theme.colors.surface,
+              shadowColor: theme.colors.text 
+            }]}>
+              <View style={[styles.datePickerHeader, { borderBottomColor: theme.colors.border }]}>
+                <TouchableOpacity 
+                  style={styles.datePickerCloseButton}
+                  onPress={() => setShowStartPicker(false)}
+                >
+                  <Text style={[styles.datePickerButtonText, { color: theme.colors.textSecondary }]}>Cancel</Text>
+                </TouchableOpacity>
+                <Text style={[styles.datePickerTitle, { color: theme.colors.text }]}>Select Start Date</Text>
+                <TouchableOpacity 
+                  style={styles.datePickerCloseButton}
+                  onPress={() => setShowStartPicker(false)}
+                >
+                  <Text style={[styles.datePickerButtonText, { color: theme.colors.primary }]}>Done</Text>
+                </TouchableOpacity>
+              </View>
               <DateTimePicker
                 value={new Date(customStart)}
                 mode="date"
-                display="default"
+                display="spinner"
                 onChange={(event, date) => {
                   if (Platform.OS === 'android') {
                     setShowStartPicker(false);
-                    if (event.type === 'set' && date) setCustomStart(date.toISOString().split('T')[0]);
-                  } else if (date) {
-                    setCustomStart(date.toISOString().split('T')[0]);
+                  }
+                  if (date) {
+                    setCustomStart(date.getFullYear() + '-' + 
+                      String(date.getMonth() + 1).padStart(2, '0') + '-' + 
+                      String(date.getDate()).padStart(2, '0'));
                   }
                 }}
+                style={[styles.datePicker, { backgroundColor: theme.colors.surface }]}
               />
-              {Platform.OS === 'ios' && (
-                <Button title="Done" onPress={() => setShowStartPicker(false)} />
-              )}
             </View>
           </View>
-        </Modal>
-        <Modal
-          visible={showEndPicker}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setShowEndPicker(false)}
-        >
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' }}>
-            <View style={{ backgroundColor: theme.colors.surface, borderRadius: 16, padding: 20, elevation: 8 }}>
+        )}
+        {showEndPicker && (
+          <View style={styles.datePickerOverlay}>
+            <View style={[styles.datePickerModal, { 
+              backgroundColor: theme.colors.surface,
+              shadowColor: theme.colors.text 
+            }]}>
+              <View style={[styles.datePickerHeader, { borderBottomColor: theme.colors.border }]}>
+                <TouchableOpacity 
+                  style={styles.datePickerCloseButton}
+                  onPress={() => setShowEndPicker(false)}
+                >
+                  <Text style={[styles.datePickerButtonText, { color: theme.colors.textSecondary }]}>Cancel</Text>
+                </TouchableOpacity>
+                <Text style={[styles.datePickerTitle, { color: theme.colors.text }]}>Select End Date</Text>
+                <TouchableOpacity 
+                  style={styles.datePickerCloseButton}
+                  onPress={() => setShowEndPicker(false)}
+                >
+                  <Text style={[styles.datePickerButtonText, { color: theme.colors.primary }]}>Done</Text>
+                </TouchableOpacity>
+              </View>
               <DateTimePicker
                 value={new Date(customEnd)}
                 mode="date"
-                display="default"
+                display="spinner"
                 onChange={(event, date) => {
                   if (Platform.OS === 'android') {
                     setShowEndPicker(false);
-                    if (event.type === 'set' && date) setCustomEnd(date.toISOString().split('T')[0]);
-                  } else if (date) {
-                    setCustomEnd(date.toISOString().split('T')[0]);
+                  }
+                  if (date) {
+                    setCustomEnd(date.getFullYear() + '-' + 
+                      String(date.getMonth() + 1).padStart(2, '0') + '-' + 
+                      String(date.getDate()).padStart(2, '0'));
                   }
                 }}
+                style={[styles.datePicker, { backgroundColor: theme.colors.surface }]}
               />
-              {Platform.OS === 'ios' && (
-                <Button title="Done" onPress={() => setShowEndPicker(false)} />
-              )}
             </View>
           </View>
-        </Modal>
+        )}
       </Animated.ScrollView>
     </View>
   );
@@ -600,16 +652,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: 'rgba(255, 255, 255, 0.9)',
     fontWeight: '500',
-  },
-  refreshBtn: {
-    borderRadius: 20,
-    overflow: 'hidden',
-  },
-  refreshBtnBlur: {
-    padding: 12,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
   },
   statsContainer: {
     flexDirection: 'row',
@@ -675,7 +717,6 @@ const styles = StyleSheet.create({
     minHeight: 40,
   },
   periodCardActive: {
-    // Removed - handled by gradient
   },
   periodCardGradient: {
     paddingVertical: 10,
@@ -785,5 +826,49 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignSelf: 'center',
     marginLeft: 20,
+  },
+  datePickerOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  datePickerModal: {
+    borderRadius: 24,
+    margin: 20,
+    padding: 20,
+    minWidth: Dimensions.get('window').width * 0.8,
+    maxWidth: Dimensions.get('window').width * 0.9,
+    elevation: 8,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  datePickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+  },
+  datePickerTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  datePickerCloseButton: {
+    padding: 8,
+    borderRadius: 12,
+  },
+  datePickerButtonText: {
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  datePicker: {
   },
 });

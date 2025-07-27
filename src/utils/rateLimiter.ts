@@ -14,7 +14,6 @@ class RateLimiter {
   private cleanupInterval: NodeJS.Timeout;
 
   constructor() {
-    // Clean up expired entries every minute
     this.cleanupInterval = setInterval(() => {
       this.cleanup();
     }, 60000);
@@ -34,7 +33,6 @@ class RateLimiter {
     const entry = this.storage.get(key);
 
     if (!entry || now > entry.resetTime) {
-      // First request or window expired
       const newEntry: RateLimitEntry = {
         count: 1,
         resetTime: now + rule.windowMs
@@ -49,15 +47,12 @@ class RateLimiter {
     }
 
     if (entry.count >= rule.maxRequests) {
-      // Rate limit exceeded
       return {
         allowed: false,
         remaining: 0,
         resetTime: entry.resetTime
       };
     }
-
-    // Increment count
     entry.count++;
     this.storage.set(key, entry);
 
@@ -80,39 +75,36 @@ class RateLimiter {
   }
 }
 
-// Global rate limiter instance
 const globalRateLimiter = new RateLimiter();
 
-// Rate limiting rules for different operations
 export const RATE_LIMITS = {
   AUTH: {
     maxRequests: 5,
-    windowMs: 15 * 60 * 1000, // 15 minutes
+    windowMs: 15 * 60 * 1000,
     keyGenerator: (email?: string) => `auth:${email || 'unknown'}`
   },
   TRANSACTION_CREATE: {
     maxRequests: 50,
-    windowMs: 60 * 1000, // 1 minute
+    windowMs: 60 * 1000,
     keyGenerator: (userId?: string) => `transaction_create:${userId || 'unknown'}`
   },
   CATEGORY_CREATE: {
     maxRequests: 10,
-    windowMs: 60 * 1000, // 1 minute
+    windowMs: 60 * 1000,
     keyGenerator: (userId?: string) => `category_create:${userId || 'unknown'}`
   },
   PROFILE_UPDATE: {
     maxRequests: 10,
-    windowMs: 60 * 1000, // 1 minute
+    windowMs: 60 * 1000,
     keyGenerator: (userId?: string) => `profile_update:${userId || 'unknown'}`
   },
   DATA_FETCH: {
     maxRequests: 100,
-    windowMs: 60 * 1000, // 1 minute
+    windowMs: 60 * 1000,
     keyGenerator: (userId?: string) => `data_fetch:${userId || 'unknown'}`
   }
 } as const;
 
-// Rate limiting middleware
 export const checkRateLimit = (
   rule: RateLimitRule,
   context?: any
@@ -131,7 +123,6 @@ export const checkRateLimit = (
   return result;
 };
 
-// Specific rate limiting functions for common operations
 export const rateLimiters = {
   auth: (email: string) => checkRateLimit(RATE_LIMITS.AUTH, email),
   transactionCreate: (userId: string) => checkRateLimit(RATE_LIMITS.TRANSACTION_CREATE, userId),
@@ -140,7 +131,6 @@ export const rateLimiters = {
   dataFetch: (userId: string) => checkRateLimit(RATE_LIMITS.DATA_FETCH, userId)
 };
 
-// Reset rate limits for a specific user (useful for testing or admin purposes)
 export const resetUserRateLimits = (userId: string) => {
   Object.values(RATE_LIMITS).forEach(rule => {
     if (rule.keyGenerator) {
@@ -150,7 +140,6 @@ export const resetUserRateLimits = (userId: string) => {
   });
 };
 
-// Cleanup function for app shutdown
 export const cleanupRateLimiter = () => {
   globalRateLimiter.destroy();
 };

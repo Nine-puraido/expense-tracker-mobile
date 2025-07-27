@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import validator from 'validator';
 
-// Validation schemas using Zod
 export const userSignUpSchema = z.object({
   email: z.string()
     .email('Invalid email format')
@@ -73,7 +72,6 @@ export const budgetLimitSchema = z.object({
   })
 });
 
-// Input sanitization functions
 export const sanitizeInput = {
   email: (email: string): string => {
     return validator.normalizeEmail(email.trim().toLowerCase()) || '';
@@ -98,7 +96,6 @@ export const sanitizeInput = {
   }
 };
 
-// Validation helper functions
 export const validateAndSanitize = {
   userSignUp: (data: any) => {
     const sanitized = {
@@ -168,7 +165,6 @@ export const validateAndSanitize = {
   }
 };
 
-// Error handling wrapper
 export const safeValidate = <T>(
   validationFn: () => { success: boolean; data: T },
   fallback?: T

@@ -28,6 +28,15 @@ const TabNavigator = () => {
   const { theme } = useAppTheme();
   const { user } = useAuth();
 
+  // Safety check - if user is null, don't render
+  if (!user) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" />
+      </View>
+    );
+  }
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -66,19 +75,19 @@ const TabNavigator = () => {
       })}
     >
       <Tab.Screen name="Home">
-        {props => <HomeScreen {...props} user={user!} />}
+        {props => <HomeScreen {...props} user={user} />}
       </Tab.Screen>
       <Tab.Screen name="Add Expense">
-        {props => <AddExpenseScreen {...props} user={user!} />}
+        {props => <AddExpenseScreen {...props} user={user} />}
       </Tab.Screen>
       <Tab.Screen name="Add Income">
-        {props => <AddIncomeScreen {...props} user={user!} />}
+        {props => <AddIncomeScreen {...props} user={user} />}
       </Tab.Screen>
       <Tab.Screen name="Analytics">
-        {props => <AnalyticsScreen {...props} user={user!} />}
+        {props => <AnalyticsScreen {...props} user={user} />}
       </Tab.Screen>
       <Tab.Screen name="Profile">
-        {props => <ProfileScreen {...props} user={user!} />}
+        {props => <ProfileScreen {...props} user={user} />}
       </Tab.Screen>
     </Tab.Navigator>
   );

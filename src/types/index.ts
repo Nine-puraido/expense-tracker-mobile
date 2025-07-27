@@ -45,6 +45,7 @@ export interface Transaction {
   recurring_transaction_id?: string | null;
   created_at: string;
   updated_at: string;
+  category?: Category;
 }
 
 export interface RecurringTransaction {

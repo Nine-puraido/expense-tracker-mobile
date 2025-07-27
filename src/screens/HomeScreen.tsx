@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions, Animated, Modal } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Dimensions, Animated, Modal, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { supabase } from '../services/supabase';
@@ -23,6 +23,10 @@ const ICON_EMOJI_MAP: Record<string, string> = {
   briefcase: '💼',
   'trending-up': '📈',
   'plus-circle': '➕',
+  'medical-outline': '🏥',
+  'shirt-outline': '👕',
+  'laptop-outline': '💻',
+  basket: '🛒',
 };
 
 export const HomeScreen = ({ user }: { user: User }) => {
@@ -31,18 +35,24 @@ export const HomeScreen = ({ user }: { user: User }) => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedDate, setSelectedDate] = useState(() => {
     const now = new Date();
-    return now.toISOString().split('T')[0];
+    return now.getFullYear() + '-' + 
+      String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+      String(now.getDate()).padStart(2, '0');
   });
   const [showDatePicker, setShowDatePicker] = useState(false);
-  const [period, setPeriod] = useState<'month' | '2weeks' | 'year' | 'custom'>('month');
+  const [period, setPeriod] = useState<'daily' | 'month' | '2weeks' | 'year' | 'custom'>('month');
   const [customStart, setCustomStart] = useState(() => {
     const now = new Date();
     const first = new Date(now.getFullYear(), now.getMonth(), 1);
-    return first.toISOString().split('T')[0];
+    return first.getFullYear() + '-' + 
+      String(first.getMonth() + 1).padStart(2, '0') + '-' + 
+      String(first.getDate()).padStart(2, '0');
   });
   const [customEnd, setCustomEnd] = useState(() => {
     const now = new Date();
-    return now.toISOString().split('T')[0];
+    return now.getFullYear() + '-' + 
+      String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+      String(now.getDate()).padStart(2, '0');
   });
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showEndPicker, setShowEndPicker] = useState(false);
@@ -56,7 +66,6 @@ export const HomeScreen = ({ user }: { user: User }) => {
     extrapolate: 'clamp',
   });
 
-  // Modern cool theme styles
   const styles = React.useMemo(() => StyleSheet.create({
     container: {
       flex: 1,
@@ -294,15 +303,27 @@ export const HomeScreen = ({ user }: { user: User }) => {
       fontSize: 14,
       color: theme.colors.textSecondary,
     },
+    transactionAmountSection: {
+      alignItems: 'flex-end',
+    },
     transactionAmount: {
       fontSize: 18,
       fontWeight: 'bold',
       textAlign: 'right',
+      marginBottom: 4,
+    },
+    transactionTimeSection: {
+      alignItems: 'flex-end',
+    },
+    transactionTime: {
+      fontSize: 11,
+      color: theme.colors.textSecondary,
+      textAlign: 'right',
     },
     transactionDate: {
-      fontSize: 12,
+      fontSize: 11,
       color: theme.colors.textSecondary,
-      marginTop: 4,
+      textAlign: 'right',
     },
     emptyState: {
       alignItems: 'center',
@@ -343,65 +364,81 @@ export const HomeScreen = ({ user }: { user: User }) => {
       color: theme.colors.text,
       fontWeight: '500',
     },
-    modalOverlay: {
-      flex: 1,
+    datePickerOverlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
       backgroundColor: 'rgba(0, 0, 0, 0.5)',
       justifyContent: 'center',
       alignItems: 'center',
+      zIndex: 1000,
     },
     datePickerModal: {
-      backgroundColor: theme.dark ? '#1F2937' : '#FFFFFF',
-      borderRadius: 20,
-      padding: 20,
+      backgroundColor: theme.colors.surface,
+      borderRadius: 24,
       margin: 20,
-      shadowColor: '#000',
+      padding: 20,
+      minWidth: width * 0.8,
+      maxWidth: width * 0.9,
+      elevation: 8,
+      shadowColor: theme.colors.text,
       shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.25,
+      shadowOpacity: 0.3,
       shadowRadius: 8,
-      elevation: 5,
+    },
+    datePickerHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      marginBottom: 16,
+      paddingBottom: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
+    },
+    datePickerTitle: {
+      fontSize: 18,
+      fontWeight: 'bold',
+    },
+    datePickerCloseButton: {
+      padding: 8,
+      borderRadius: 12,
+    },
+    datePickerButtonText: {
+      fontSize: 16,
+      fontWeight: '500',
+    },
+    datePicker: {
+      backgroundColor: theme.colors.surface,
     },
   }), [theme]);
-
-  // Your existing useEffect and useFocusEffect logic remains the same
-  useEffect(() => {
-    if (!user) return;
-    const fetchTransactions = async () => {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from('transactions')
-        .select('*')
-        .eq('user_id', user.id)
-        .order('transaction_date', { ascending: false })
-        .limit(10);
-      
-      if (!error && data) {
-        setTransactions(data as Transaction[]);
-      } else {
-        setTransactions([]);
-      }
-      setLoading(false);
-    };
-    fetchTransactions();
-  }, [user]);
 
   useFocusEffect(
     React.useCallback(() => {
       if (user) {
         const fetchTransactions = async () => {
           setLoading(true);
-          const { data, error } = await supabase
-            .from('transactions')
-            .select('*')
-            .eq('user_id', user.id)
-            .order('transaction_date', { ascending: false })
-            .limit(10);
-          
-          if (!error && data) {
-            setTransactions(data as Transaction[]);
-          } else {
+          try {
+            await new Promise(resolve => setTimeout(resolve, 400));
+            
+            const { data, error } = await supabase
+              .from('transactions')
+              .select('*')
+              .eq('user_id', user.id)
+              .order('transaction_date', { ascending: false })
+              .limit(100);
+            
+            if (!error && data) {
+              setTransactions(data as Transaction[]);
+            } else {
+              setTransactions([]);
+            }
+          } catch (error) {
             setTransactions([]);
+          } finally {
+            setLoading(false);
           }
-          setLoading(false);
         };
         fetchTransactions();
       }
@@ -416,7 +453,6 @@ export const HomeScreen = ({ user }: { user: User }) => {
     fetchCategories();
   }, []);
 
-  // Your existing helper functions remain the same
   const getCategoryName = (categoryId: string) => {
     const cat = categories.find(c => c.id === categoryId);
     return cat ? cat.name : 'Unknown';
@@ -425,23 +461,42 @@ export const HomeScreen = ({ user }: { user: User }) => {
   const getDateNDaysAgo = (n: number) => {
     const d = new Date();
     d.setDate(d.getDate() - n);
-    return d.toISOString().split('T')[0];
+    return d.getFullYear() + '-' + 
+      String(d.getMonth() + 1).padStart(2, '0') + '-' + 
+      String(d.getDate()).padStart(2, '0');
   };
 
-  // Your existing summary calculation logic remains the same
   let rangeStart = '';
   let rangeEnd = '';
-  if (period === 'month') {
+  if (period === 'daily') {
+    rangeStart = selectedDate;
+    rangeEnd = selectedDate;
+  } else if (period === 'month') {
     const now = new Date();
-    rangeStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-    rangeEnd = now.toISOString().split('T')[0];
+    const first = new Date(now.getFullYear(), now.getMonth(), 1);
+    const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    rangeStart = first.getFullYear() + '-' + 
+      String(first.getMonth() + 1).padStart(2, '0') + '-' + 
+      String(first.getDate()).padStart(2, '0');
+    rangeEnd = last.getFullYear() + '-' + 
+      String(last.getMonth() + 1).padStart(2, '0') + '-' + 
+      String(last.getDate()).padStart(2, '0');
   } else if (period === '2weeks') {
     rangeStart = getDateNDaysAgo(13);
-    rangeEnd = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    rangeEnd = now.getFullYear() + '-' + 
+      String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+      String(now.getDate()).padStart(2, '0');
   } else if (period === 'year') {
-  const now = new Date();
-    rangeStart = new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0];
-    rangeEnd = now.toISOString().split('T')[0];
+    const now = new Date();
+    const first = new Date(now.getFullYear(), 0, 1);
+    const last = new Date(now.getFullYear(), 11, 31);
+    rangeStart = first.getFullYear() + '-' + 
+      String(first.getMonth() + 1).padStart(2, '0') + '-' + 
+      String(first.getDate()).padStart(2, '0');
+    rangeEnd = last.getFullYear() + '-' + 
+      String(last.getMonth() + 1).padStart(2, '0') + '-' + 
+      String(last.getDate()).padStart(2, '0');
   } else if (period === 'custom') {
     rangeStart = customStart;
     rangeEnd = customEnd;
@@ -452,16 +507,18 @@ export const HomeScreen = ({ user }: { user: User }) => {
   const totalExpenses = summaryTransactions.filter(t => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
   const net = totalIncome - totalExpenses;
 
-  // Remove currency logic
-  // const currency = (user.currency || 'USD') as keyof typeof CURRENCY_FORMAT;
-  // const { symbol, position } = CURRENCY_FORMAT[currency] || CURRENCY_FORMAT['USD'];
-
-  // Replace formatCurrency with a simple number formatter
   const formatAmount = (amount: number) => {
     return Math.round(amount).toLocaleString();
   };
 
-  const dayTransactions = transactions.filter(t => t.transaction_date === selectedDate);
+  const dayTransactions = transactions
+    .filter(t => t.transaction_date === selectedDate)
+    .sort((a, b) => {
+      if (a.created_at && b.created_at) {
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      }
+      return new Date(b.transaction_date).getTime() - new Date(a.transaction_date).getTime();
+    });
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
@@ -473,16 +530,29 @@ export const HomeScreen = ({ user }: { user: User }) => {
     });
   };
 
+  const formatTime = (timestamp: string) => {
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: true 
+    });
+  };
+
   const changeDay = (delta: number) => {
     const date = new Date(selectedDate);
     date.setDate(date.getDate() + delta);
-    setSelectedDate(date.toISOString().split('T')[0]);
+    setSelectedDate(date.getFullYear() + '-' + 
+      String(date.getMonth() + 1).padStart(2, '0') + '-' + 
+      String(date.getDate()).padStart(2, '0'));
   };
 
   const onDateChange = (event: any, date?: Date) => {
     setShowDatePicker(false);
     if (date) {
-      setSelectedDate(date.toISOString().split('T')[0]);
+      setSelectedDate(date.getFullYear() + '-' + 
+        String(date.getMonth() + 1).padStart(2, '0') + '-' + 
+        String(date.getDate()).padStart(2, '0'));
     }
   };
 
@@ -505,7 +575,6 @@ export const HomeScreen = ({ user }: { user: User }) => {
         )}
         scrollEventThrottle={16}
       >
-        {/* Modern Header with Gradient */}
         <Animated.View style={[styles.header, { height: headerHeight }]}>
           <LinearGradient
             colors={theme.dark 
@@ -519,7 +588,6 @@ export const HomeScreen = ({ user }: { user: User }) => {
           <Text style={styles.welcomeText}>Welcome back!</Text>
           <Text style={styles.subWelcomeText}>{user.nickname || user.email}</Text>
           
-          {/* Glassmorphism Balance Card */}
           <View style={styles.balanceCard}>
             <BlurView intensity={80} tint={theme.dark ? 'dark' : 'light'} style={styles.balanceBlur}>
               <LinearGradient
@@ -546,14 +614,13 @@ export const HomeScreen = ({ user }: { user: User }) => {
           </View>
         </Animated.View>
 
-        {/* Period Selector */}
         <View style={styles.periodSelector}>
           <TouchableOpacity 
-            onPress={() => setPeriod('month')} 
-            style={[styles.periodBtn, period === 'month' && styles.periodBtnActive]}
+            onPress={() => setPeriod('daily')} 
+            style={[styles.periodBtn, period === 'daily' && styles.periodBtnActive]}
           >
-            <Text style={[styles.periodBtnText, period === 'month' && styles.periodBtnTextActive]}>
-              Month
+            <Text style={[styles.periodBtnText, period === 'daily' && styles.periodBtnTextActive]}>
+              Daily
             </Text>
           </TouchableOpacity>
           <TouchableOpacity 
@@ -562,6 +629,14 @@ export const HomeScreen = ({ user }: { user: User }) => {
           >
             <Text style={[styles.periodBtnText, period === '2weeks' && styles.periodBtnTextActive]}>
               2 Weeks
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            onPress={() => setPeriod('month')} 
+            style={[styles.periodBtn, period === 'month' && styles.periodBtnActive]}
+          >
+            <Text style={[styles.periodBtnText, period === 'month' && styles.periodBtnTextActive]}>
+              Month
             </Text>
           </TouchableOpacity>
           <TouchableOpacity 
@@ -582,7 +657,6 @@ export const HomeScreen = ({ user }: { user: User }) => {
           </TouchableOpacity>
         </View>
 
-        {/* Custom Date Range */}
         {period === 'custom' && (
           <View style={styles.customDateRow}>
             <TouchableOpacity 
@@ -600,7 +674,6 @@ export const HomeScreen = ({ user }: { user: User }) => {
           </View>
         )}
 
-        {/* Modern Summary Cards */}
         <View style={styles.summaryContainer}>
           <View style={styles.summaryCard}>
             <View style={styles.summaryIcon}>
@@ -648,7 +721,6 @@ export const HomeScreen = ({ user }: { user: User }) => {
           </View>
         </View>
 
-        {/* Modern Date Section */}
         <View style={styles.dateSection}>
           <View style={styles.dateHeader}>
             <TouchableOpacity 
@@ -684,7 +756,6 @@ export const HomeScreen = ({ user }: { user: User }) => {
           </TouchableOpacity>
         </View>
 
-        {/* Transactions List */}
         <View style={styles.transactionsList}>
           {dayTransactions.length === 0 ? (
             <View style={styles.emptyState}>
@@ -730,22 +801,27 @@ export const HomeScreen = ({ user }: { user: User }) => {
                       <Text style={styles.categoryName}>
                         {category ? category.name : 'Unknown'}
                       </Text>
-                      {tx.description && (
+                      {tx.description && !tx.description.endsWith(' expense') && !tx.description.endsWith(' income') && (
                         <Text style={styles.transactionDesc}>{tx.description}</Text>
                       )}
                     </View>
                     
-                <Text
-                  style={[
-                    styles.transactionAmount,
-                        { color: tx.type === 'income' ? '#4CAF50' : '#F44336' },
-                  ]}
-                >
-                      {tx.type === 'income' ? '+' : '-'}฿ {formatAmount(tx.amount)}
-                </Text>
+                    <View style={styles.transactionAmountSection}>
+                      <Text
+                        style={[
+                          styles.transactionAmount,
+                          { color: tx.type === 'income' ? '#4CAF50' : '#F44336' },
+                        ]}
+                      >
+                        {tx.type === 'income' ? '+' : '-'}฿ {formatAmount(tx.amount)}
+                      </Text>
+                      {tx.created_at && (
+                        <Text style={styles.transactionTime}>
+                          {formatTime(tx.created_at)}
+                        </Text>
+                      )}
+                    </View>
               </View>
-                  
-                <Text style={styles.transactionDate}>{tx.transaction_date}</Text>
               </View>
               );
             })
@@ -753,66 +829,110 @@ export const HomeScreen = ({ user }: { user: User }) => {
             </View>
         </Animated.ScrollView>
 
-      {/* Date Pickers */}
-      <Modal
-        visible={showDatePicker}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowDatePicker(false)}
-      >
-        <View style={styles.modalOverlay}>
+      {showDatePicker && (
+        <View style={styles.datePickerOverlay}>
           <View style={styles.datePickerModal}>
+            <View style={styles.datePickerHeader}>
+              <TouchableOpacity 
+                style={styles.datePickerCloseButton}
+                onPress={() => setShowDatePicker(false)}
+              >
+                <Text style={[styles.datePickerButtonText, { color: theme.colors.textSecondary }]}>Cancel</Text>
+              </TouchableOpacity>
+              <Text style={[styles.datePickerTitle, { color: theme.colors.text }]}>Select Date</Text>
+              <TouchableOpacity 
+                style={styles.datePickerCloseButton}
+                onPress={() => setShowDatePicker(false)}
+              >
+                <Text style={[styles.datePickerButtonText, { color: theme.colors.primary }]}>Done</Text>
+              </TouchableOpacity>
+            </View>
             <DateTimePicker
               value={new Date(selectedDate)}
               mode="date"
-              display="default"
+              display="spinner"
               onChange={onDateChange}
+              style={styles.datePicker}
             />
           </View>
         </View>
-      </Modal>
+      )}
       
-      <Modal
-        visible={showStartPicker}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowStartPicker(false)}
-      >
-        <View style={styles.modalOverlay}>
+      {showStartPicker && (
+        <View style={styles.datePickerOverlay}>
           <View style={styles.datePickerModal}>
+            <View style={styles.datePickerHeader}>
+              <TouchableOpacity 
+                style={styles.datePickerCloseButton}
+                onPress={() => setShowStartPicker(false)}
+              >
+                <Text style={[styles.datePickerButtonText, { color: theme.colors.textSecondary }]}>Cancel</Text>
+              </TouchableOpacity>
+              <Text style={[styles.datePickerTitle, { color: theme.colors.text }]}>Select Start Date</Text>
+              <TouchableOpacity 
+                style={styles.datePickerCloseButton}
+                onPress={() => setShowStartPicker(false)}
+              >
+                <Text style={[styles.datePickerButtonText, { color: theme.colors.primary }]}>Done</Text>
+              </TouchableOpacity>
+            </View>
             <DateTimePicker
               value={new Date(customStart)}
               mode="date"
-              display="default"
+              display="spinner"
               onChange={(event, date) => {
-                setShowStartPicker(false);
-                if (date) setCustomStart(date.toISOString().split('T')[0]);
+                if (Platform.OS === 'android') {
+                  setShowStartPicker(false);
+                }
+                if (date) {
+                  setCustomStart(date.getFullYear() + '-' + 
+                    String(date.getMonth() + 1).padStart(2, '0') + '-' + 
+                    String(date.getDate()).padStart(2, '0'));
+                }
               }}
+              style={styles.datePicker}
             />
           </View>
         </View>
-      </Modal>
+      )}
       
-      <Modal
-        visible={showEndPicker}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowEndPicker(false)}
-      >
-        <View style={styles.modalOverlay}>
+      {showEndPicker && (
+        <View style={styles.datePickerOverlay}>
           <View style={styles.datePickerModal}>
+            <View style={styles.datePickerHeader}>
+              <TouchableOpacity 
+                style={styles.datePickerCloseButton}
+                onPress={() => setShowEndPicker(false)}
+              >
+                <Text style={[styles.datePickerButtonText, { color: theme.colors.textSecondary }]}>Cancel</Text>
+              </TouchableOpacity>
+              <Text style={[styles.datePickerTitle, { color: theme.colors.text }]}>Select End Date</Text>
+              <TouchableOpacity 
+                style={styles.datePickerCloseButton}
+                onPress={() => setShowEndPicker(false)}
+              >
+                <Text style={[styles.datePickerButtonText, { color: theme.colors.primary }]}>Done</Text>
+              </TouchableOpacity>
+            </View>
             <DateTimePicker
               value={new Date(customEnd)}
               mode="date"
-              display="default"
+              display="spinner"
               onChange={(event, date) => {
-                setShowEndPicker(false);
-                if (date) setCustomEnd(date.toISOString().split('T')[0]);
+                if (Platform.OS === 'android') {
+                  setShowEndPicker(false);
+                }
+                if (date) {
+                  setCustomEnd(date.getFullYear() + '-' + 
+                    String(date.getMonth() + 1).padStart(2, '0') + '-' + 
+                    String(date.getDate()).padStart(2, '0'));
+                }
               }}
+              style={styles.datePicker}
             />
           </View>
         </View>
-      </Modal>
+      )}
     </View>
   );
 };
